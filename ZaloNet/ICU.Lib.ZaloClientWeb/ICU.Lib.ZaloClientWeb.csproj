@@ -8,11 +8,20 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <AssemblyName>ICU.Lib.ZaloClientWeb</AssemblyName>
     <RootNamespace>ICU.Lib.ZaloClientWeb</RootNamespace>
+    <PackageId>ICU.Lib.ZaloClientWeb</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Amino Tran</Authors>
     <Description>Unofficial Zalo API for .NET - Port of zca-js (TypeScript)</Description>
     <PackageTags>zalo;chatbot;api;zca</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/your-repo/zalo-net</RepositoryUrl>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
