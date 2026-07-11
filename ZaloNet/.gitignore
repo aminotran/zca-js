@@ -1,0 +1,63 @@
+## .NET / Visual Studio
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+.vs/
+*.csproj.user
+
+## NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+**/[Pp]ackages/repositories.config
+packages/
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio
+*.sln.ide/
+*.sln.ide.cache/
+*.sln.ide.settings
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+
+## macOS
+.DS_Store
+
+## Test results
+[Tt]est[Rr]esults/
+[Bb]uild[Rr]esults/
+
+## dotnet
+*.nupkg
+*.snupkg
+project.assets.json
+*.lock.json
+
+## VS Code
+.vscode/
+*.code-workspace
+
+## Temp files
+*~
+*.bak
+*.swp
+*.tmp
