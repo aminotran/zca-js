@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 using ICU.Lib.ZaloClientWeb.Crypto;
 using ICU.Lib.ZaloClientWeb.Exceptions;
@@ -12,7 +13,11 @@ namespace ICU.Lib.ZaloClientWeb.Auth;
 
 /// <summary>
 /// Handles cookie-based login to Zalo API.
-/// Equivalent to login.ts in zca-js (apis/login.ts).
+/// Implements the full login flow matching zca-js (apis/login.ts):
+/// 1. Encrypt params with ParamsEncryptor
+/// 2. POST to /api/login/getLoginInfo
+/// 3. Decrypt response to get LoginInfo
+/// 4. GET /api/login/getServerInfo for settings
 /// </summary>
 public class LoginHelper
 {
@@ -34,7 +39,6 @@ public class LoginHelper
 
     /// <summary>
     /// Performs login with cookie credentials.
-    /// Equivalent to login() in zca-js.
     /// </summary>
     public async Task<ZaloContext> LoginAsync(Credentials credentials)
     {
@@ -50,15 +54,19 @@ public class LoginHelper
         // Apply cookies to container
         _client.ApplyCookies(credentials.Cookie);
 
-        // Simulate the login requests
-        var loginData = await PerformLoginAsync(ctx, credentials);
+        // Step 1: Call getLoginInfo API
+        Logger.Info("Performing login...");
+        var loginData = await PerformLoginAsync(ctx);
         if (loginData == null)
-            throw new ZaloApiException("Login failed");
+            throw new ZaloApiException("Login failed: could not get login info");
 
-        var serverInfo = await GetServerInfoAsync(ctx, credentials);
+        // Step 2: Call getServerInfo API
+        Logger.Info("Getting server info...");
+        var serverInfo = await GetServerInfoAsync(ctx);
         if (serverInfo == null)
             throw new ZaloApiException("Failed to get server info");
 
+        // Step 3: Populate context
         ctx.SecretKey = loginData.ZpwEnk;
         ctx.Uid = loginData.Uid;
         ctx.Settings = serverInfo.Settings ?? new Dictionary<string, object>();
@@ -66,13 +74,14 @@ public class LoginHelper
         ctx.LoginInfo = loginData;
         ctx.ZpwServiceMapV3 = loginData.ZpwServiceMapV3;
         ctx.ZpwWs = loginData.ZpwWs;
-        ctx.ZpwWsUrls = loginData.ZpwServiceMapV3.ContainsKey("chat") 
-            ? loginData.ZpwServiceMapV3["chat"] 
+        ctx.ZpwWsUrls = loginData.ZpwServiceMapV3.ContainsKey("chat")
+            ? loginData.ZpwServiceMapV3["chat"]
             : Array.Empty<string>();
 
         if (string.IsNullOrEmpty(ctx.SecretKey))
-            throw new ZaloApiException("Context initialization failed - no secret key");
+            throw new ZaloApiException("Context initialization failed - no secret key (zpw_enk)");
 
+        Logger.Info("Logged in as", ctx.Uid.ToString());
         return ctx;
     }
 
@@ -86,56 +95,262 @@ public class LoginHelper
             throw new ZaloApiException("Missing required param: userAgent");
     }
 
-    private async Task<LoginInfo?> PerformLoginAsync(ZaloContext ctx, Credentials credentials)
+    /// <summary>
+    /// Calls getLoginInfo API. Equivalent to login() in zca-js.
+    /// </summary>
+    private async Task<LoginInfo?> PerformLoginAsync(ZaloContext ctx)
     {
-        // TODO: Implement actual Zalo login API call
-        // This is a stub - the actual implementation would:
-        // 1. Build the login request URL with encrypted params
-        // 2. Send POST request to Zalo login endpoint
-        // 3. Parse and decrypt the response
-        // 4. Return LoginInfo
-
-        Logger.Info("Performing login...");
-        
-        // Placeholder for actual login request
-        var paramsEncryptor = new ParamsEncryptor(_options.ApiType, credentials.Imei, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        var encryptParams = paramsEncryptor.GetParams();
-
-        // Build the URL
-        var url = ZaloUtils.MakeUrl("https://wpa.chat.zalo.me/api/login", 
-            new Dictionary<string, string>
-            {
-                ["imei"] = credentials.Imei,
-                ["computerName"] = "Unknown",
-                ["params"] = System.Text.Json.JsonSerializer.Serialize(encryptParams)
-            },
-            _options.ApiVersion, _options.ApiType);
-
-        // The actual implementation would make the HTTP request here
-        // and decrypt the response using AesHelper.DecryptResponse()
-
-        // For now, we'll simulate a successful login
-        await Task.Delay(100);
-
-        return new LoginInfo
+        try
         {
-            Uid = 0, // Will be populated from actual API
-            ZpwEnk = null, // Will be populated from actual API
-            ZpwWs = null
+            var (encryptedParams, enk) = await GetEncryptParamsAsync(ctx, "getlogininfo");
+
+            var formData = new Dictionary<string, string>(encryptedParams)
+            {
+                ["nretry"] = "0"
+            };
+
+            var url = ZaloUtils.MakeUrl("https://wpa.chat.zalo.me/api/login/getLoginInfo",
+                formData, ctx.ApiVersion, ctx.ApiType);
+
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("user-agent", ctx.UserAgent);
+            request.Headers.TryAddWithoutValidation("origin", "https://chat.zalo.me");
+            request.Headers.TryAddWithoutValidation("referer", "https://chat.zalo.me/");
+
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                throw new ZaloApiException($"Failed to fetch login info: {response.StatusCode}");
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("error_code", out var errEl) || errEl.GetInt32() != 0)
+            {
+                var errMsg = root.TryGetProperty("error_message", out var em) ? em.GetString() : "Unknown error";
+                throw new ZaloApiException($"Login failed: {errMsg}");
+            }
+
+            // Decrypt the response data
+            if (!root.TryGetProperty("data", out var dataEl) || dataEl.ValueKind != JsonValueKind.String)
+                throw new ZaloApiException("Failed to fetch login info: no data");
+
+            var encryptedData = dataEl.GetString();
+            if (string.IsNullOrEmpty(encryptedData))
+                throw new ZaloApiException("Failed to fetch login info: empty data");
+
+            string decryptedStr;
+            if (!string.IsNullOrEmpty(enk))
+            {
+                decryptedStr = AesHelper.DecryptAesCbc(enk, encryptedData);
+                if (decryptedStr == null)
+                    throw new ZaloApiException("Failed to decrypt login response");
+            }
+            else
+            {
+                decryptedStr = encryptedData;
+            }
+
+            // Parse decrypted response into LoginInfo
+            var loginInfo = JsonSerializer.Deserialize<LoginResponse>(decryptedStr);
+            if (loginInfo == null)
+                throw new ZaloApiException("Failed to parse login response");
+
+            return new LoginInfo
+            {
+                Uid = long.TryParse(loginInfo.Uid, out var uid) ? uid : 0,
+                ZpwEnk = loginInfo.ZpwEnk,
+                ZpwWs = loginInfo.ZpwWs,
+                ZpwServiceMapV3 = loginInfo.ZpwServiceMapV3 ?? new Dictionary<string, string[]>(),
+                Send2MeId = loginInfo.Send2MeId,
+                Language = loginInfo.Language,
+                PublicIp = loginInfo.PublicIp,
+                Haspcclient = loginInfo.Haspcclient
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger.Error("Login failed:", ex.Message);
+            throw new ZaloApiException($"Login failed: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Calls getServerInfo API. Equivalent to getServerInfo() in zca-js.
+    /// </summary>
+    private async Task<ServerInfoData?> GetServerInfoAsync(ZaloContext ctx)
+    {
+        try
+        {
+            var (encryptedParams, _) = await GetEncryptParamsAsync(ctx, "getserverinfo");
+
+            if (!encryptedParams.TryGetValue("signkey", out var signKey) || string.IsNullOrEmpty(signKey))
+                throw new ZaloApiException("Missing signkey for getServerInfo");
+
+            var formData = new Dictionary<string, string>
+            {
+                ["imei"] = ctx.Imei,
+                ["type"] = ctx.ApiType.ToString(),
+                ["client_version"] = ctx.ApiVersion.ToString(),
+                ["computer_name"] = "Web",
+                ["signkey"] = signKey
+            };
+
+            var url = ZaloUtils.MakeUrl("https://wpa.chat.zalo.me/api/login/getServerInfo",
+                formData, ctx.ApiVersion, ctx.ApiType);
+
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("user-agent", ctx.UserAgent);
+            request.Headers.TryAddWithoutValidation("origin", "https://chat.zalo.me");
+            request.Headers.TryAddWithoutValidation("referer", "https://chat.zalo.me/");
+
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                throw new ZaloApiException($"Failed to fetch server info: {response.StatusCode}");
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("error_code", out var errEl) && errEl.GetInt32() != 0)
+            {
+                var errMsg = root.TryGetProperty("error_message", out var em) ? em.GetString() : "Unknown error";
+                throw new ZaloApiException($"Failed to fetch server info: {errMsg}");
+            }
+
+            if (!root.TryGetProperty("data", out var dataEl))
+                throw new ZaloApiException("Failed to fetch server info: no data");
+
+            // Server info is not encrypted (unlike login)
+            var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(dataEl.GetRawText());
+
+            return new ServerInfoData
+            {
+                Settings = serverInfo != null
+                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(serverInfo.Settings?.GetRawText() ?? "{}")
+                    : new Dictionary<string, object>(),
+                ExtraVer = serverInfo?.ExtraVer
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger.Error("Failed to fetch server info:", ex.Message);
+            throw new ZaloApiException($"Failed to fetch server info: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Builds encrypted parameters for API calls. Equivalent to getEncryptParam() in zca-js.
+    /// </summary>
+    private async Task<(Dictionary<string, string> Params, string? Enk)> GetEncryptParamsAsync(ZaloContext ctx, string type)
+    {
+        var data = new Dictionary<string, object>
+        {
+            ["computer_name"] = "Web",
+            ["imei"] = ctx.Imei,
+            ["language"] = ctx.Language,
+            ["ts"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         };
+
+        var encryptedData = await EncryptParamAsync(ctx, data);
+        var finalParams = new Dictionary<string, string>();
+
+        if (encryptedData == null)
+        {
+            foreach (var kvp in data)
+                finalParams[kvp.Key] = kvp.Value?.ToString() ?? "";
+        }
+        else
+        {
+            foreach (var kvp in encryptedData.EncryptedParams)
+                finalParams[kvp.Key] = kvp.Value;
+            finalParams["params"] = encryptedData.EncodedData;
+        }
+
+        finalParams["type"] = ctx.ApiType.ToString();
+        finalParams["client_version"] = ctx.ApiVersion.ToString();
+
+        // Generate signkey
+        if (type == "getserverinfo")
+        {
+            var signDict = new Dictionary<string, object>
+            {
+                ["imei"] = ctx.Imei,
+                ["type"] = ctx.ApiType,
+                ["client_version"] = ctx.ApiVersion,
+                ["computer_name"] = "Web"
+            };
+            finalParams["signkey"] = ZaloUtils.GetSignKey(type, signDict);
+        }
+        else
+        {
+            var signDict = new Dictionary<string, object>();
+            foreach (var kvp in finalParams)
+                signDict[kvp.Key] = kvp.Value;
+            finalParams["signkey"] = ZaloUtils.GetSignKey(type, signDict);
+        }
+
+        return (finalParams, encryptedData?.Enk);
     }
 
-    private async Task<ServerInfo?> GetServerInfoAsync(ZaloContext ctx, Credentials credentials)
+    /// <summary>
+    /// Creates encrypted parameters using ParamsEncryptor. Equivalent to _encryptParam() in zca-js.
+    /// </summary>
+    private async Task<EncryptResult?> EncryptParamAsync(ZaloContext ctx, Dictionary<string, object> data)
     {
-        // TODO: Implement actual server info API call
-        Logger.Info("Getting server info...");
-        await Task.Delay(100);
-        return new ServerInfo();
+        try
+        {
+            var encryptor = new ParamsEncryptor(ctx.ApiType, ctx.Imei, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+            var stringifiedData = JsonSerializer.Serialize(data);
+            var encryptKey = encryptor.GetEncryptKey();
+            var encodedData = AesHelper.EncryptAesCbc(encryptKey, stringifiedData);
+            var paramsDict = encryptor.GetParams();
+
+            if (paramsDict == null || string.IsNullOrEmpty(encodedData))
+                return null;
+
+            return new EncryptResult
+            {
+                EncodedData = encodedData,
+                EncryptedParams = paramsDict,
+                Enk = encryptKey
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new ZaloApiException($"Failed to encrypt params: {ex.Message}");
+        }
     }
 
-    internal class ServerInfo
+    private class EncryptResult
     {
-        public Dictionary<string, object>? Settings { get; set; } = new();
+        public string EncodedData { get; set; } = "";
+        public Dictionary<string, string> EncryptedParams { get; set; } = new();
+        public string Enk { get; set; } = "";
+    }
+
+    private class LoginResponse
+    {
+        public string? Uid { get; set; }
+        public string? ZpwEnk { get; set; }
+        public string? ZpwWs { get; set; }
+        public string? Send2MeId { get; set; }
+        public string? Language { get; set; }
+        public string? PublicIp { get; set; }
+        public int Haspcclient { get; set; }
+        public Dictionary<string, string[]>? ZpwServiceMapV3 { get; set; }
+    }
+
+    private class ServerInfoResponse
+    {
+        public JsonElement? Settings { get; set; }
+        public string? ExtraVer { get; set; }
+    }
+
+    internal class ServerInfoData
+    {
+        public Dictionary<string, object> Settings { get; set; } = new();
         public string? ExtraVer { get; set; }
     }
 }
