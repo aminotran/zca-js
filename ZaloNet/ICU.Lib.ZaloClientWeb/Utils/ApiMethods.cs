@@ -46,7 +46,7 @@ public static class ApiMethods
         ["getFriendRecommendations"] = "friend", ["changeFriendAlias"] = "alias",
         ["removeFriendAlias"] = "alias", ["getSentFriendRequest"] = "friend",
         ["getRelatedFriendGroup"] = "friend", ["getMultiUsersByPhones"] = "friend",
-        ["inviteUserToGroups"] = "group", ["getAliasList"] = "alias",
+        ["sendMessageGroup"] = "group", ["inviteUserToGroups"] = "group", ["getAliasList"] = "alias",
         ["sendFriendRequest"] = "friend", ["getFriendRequestStatus"] = "friend",
         ["getFriendBoardList"] = "friend_board",
 

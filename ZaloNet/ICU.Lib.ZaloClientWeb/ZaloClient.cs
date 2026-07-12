@@ -212,7 +212,24 @@ public class ZaloApi
     public Task<ZaloApiResponse<JsonElement>> GetMultiUsersByPhonesAsync(List<string> phones) => ApiMethods.CallPostApiAsync(_context, _httpClient, "getMultiUsersByPhones", new { phones });
     public Task<ZaloApiResponse<JsonElement>> GetAvatarUrlProfileAsync(long userId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAvatarUrlProfile", new { userId });
     public Task<ZaloApiResponse<JsonElement>> InviteUserToGroupsAsync(long userId, List<string> groupIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "inviteUserToGroups", new { userId, groupIds });
-    public Task<ZaloApiResponse<JsonElement>> SendMessageAsync(string threadId, string message, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "sendMessage", new { threadId, message, threadType });
+    public Task<ZaloApiResponse<JsonElement>> SendMessageAsync(string threadId, string message, ThreadType threadType = ThreadType.User)
+    {
+        // In TS: build params with { message, clientId, toid/grid, imei, ttl }, then encodeAES, then send as form body "params"
+        // For user messages: POST /api/message/sms  with params: { message, clientId, ttl, toid, imei }
+        // For group messages: POST /api/group/sendmsg with params: { message, clientId, ttl, grid, visibility=0 }
+        var isGroup = threadType == ThreadType.Group;
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (isGroup)
+        {
+            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessageGroup",
+                new { message, clientId = timestamp, ttl = 0, grid = threadId, visibility = 0 });
+        }
+        else
+        {
+            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessage",
+                new { message, clientId = timestamp, ttl = 0, toid = threadId, imei = _context.Imei });
+        }
+    }
     public Task<ZaloApiResponse<JsonElement>> SendStickerAsync(string threadId, int stickerId, int stickerCategoryId, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "sendSticker", new { threadId, stickerId, stickerCategoryId, threadType });
     public Task<ZaloApiResponse<JsonElement>> SendLinkAsync(string threadId, string link, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "sendLink", new { threadId, link, threadType });
     public Task<ZaloApiResponse<JsonElement>> SendVideoAsync(string threadId, string videoPath, string? thumbnailPath = null, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "sendVideo", new { threadId, videoPath, thumbnailPath, threadType });
