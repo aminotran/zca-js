@@ -154,6 +154,13 @@ public class ZaloApi
 
     internal WebSocket.ZaloListener? _listener;
 
+    /// <summary>
+    /// Cache for GetConversationAsync to avoid HTTP 429 rate limiting.
+    /// The cache is invalidated after 60 seconds.
+    /// </summary>
+    private ZaloApiResponse<JsonElement>? _conversationCache;
+    private DateTime _conversationCacheTime;
+
     public ZaloApi(ZaloContext context, HttpClient httpClient)
     {
         _context = context;
@@ -250,7 +257,164 @@ public class ZaloApi
     public Task<ZaloApiResponse<JsonElement>> JoinGroupInviteBoxAsync(string code) => ApiMethods.CallPostApiAsync(_context, _httpClient, "joinGroupInviteBox", new { code });
     public Task<ZaloApiResponse<JsonElement>> DeleteGroupInviteBoxAsync(string code) => ApiMethods.CallPostApiAsync(_context, _httpClient, "deleteGroupInviteBox", new { code });
     public Task<ZaloApiResponse<JsonElement>> UpgradeGroupToCommunityAsync(string groupId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "upgradeGroupToCommunity", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> GetConversationAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getContext");
+    public async Task<ZaloApiResponse<JsonElement>> GetConversationAsync()
+    {
+        try
+        {
+            // Return cached result if available (60s TTL) to avoid HTTP 429 rate limiting
+            if (_conversationCache != null && (DateTime.UtcNow - _conversationCacheTime).TotalSeconds < 60)
+            {
+                return _conversationCache;
+            }
+
+            // Build the conversation list from friends + groups
+            var convList = new List<JsonElement>();
+            var profiles = new Dictionary<string, JsonElement>();
+            var groupInfoDict = new Dictionary<string, JsonElement>();
+
+            // 1. Fetch friends -> user conversations
+            // Note: SendApiRequestAsync already decrypts AES response and extracts the "data" field.
+            // So friendsResult.Data is the decrypted inner JSON (User[] array directly).
+            var friendsResult = await GetAllFriendsAsync();
+            if (friendsResult.IsSuccess && friendsResult.Data.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var friend in friendsResult.Data.EnumerateArray())
+                {
+                    var userId = friend.TryGetProperty("userId", out var uidEl)
+                        ? uidEl.GetString()
+                        : friend.TryGetProperty("id", out var idEl)
+                            ? idEl.GetString()
+                            : null;
+                    if (string.IsNullOrEmpty(userId)) continue;
+
+                    var displayName = friend.TryGetProperty("displayName", out var dnEl)
+                        ? dnEl.GetString()
+                        : friend.TryGetProperty("name", out var nEl)
+                            ? nEl.GetString()
+                            : userId;
+
+                    var convObj = new Dictionary<string, object?>
+                    {
+                        ["id"] = userId,
+                        ["type"] = 0, // 0 = user
+                        ["name"] = displayName ?? userId,
+                        ["lastMsg"] = "",
+                        ["lastTime"] = 0L,
+                    };
+                    convList.Add(JsonSerializer.SerializeToElement(convObj));
+
+                    var profileObj = new Dictionary<string, object?>
+                    {
+                        ["displayName"] = displayName ?? userId,
+                    };
+                    profiles[userId!] = JsonSerializer.SerializeToElement(profileObj);
+                }
+            }
+
+            // 2. Fetch groups -> get group IDs from gridVerMap
+            // Note: getAllGroups API returns { version, gridVerMap: { groupId: version } }
+            // It does NOT contain group names. Group names require individual GetGroupInfoAsync calls.
+            var groupsResult = await GetAllGroupsAsync();
+            if (groupsResult.IsSuccess && groupsResult.Data.ValueKind == JsonValueKind.Object)
+            {
+                var gData = groupsResult.Data;
+                // Try gridVerMap first (most common response format)
+                if (gData.TryGetProperty("gridVerMap", out var gridMap) && gridMap.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var grp in gridMap.EnumerateObject())
+                    {
+                        var gid = grp.Name;
+                        if (string.IsNullOrEmpty(gid)) continue;
+
+                        var convObj = new Dictionary<string, object?>
+                        {
+                            ["id"] = gid,
+                            ["type"] = 1, // 1 = group
+                            ["name"] = $"Group {gid}", // will be resolved later via GetGroupInfo if user selects
+                            ["lastMsg"] = "",
+                            ["lastTime"] = 0L,
+                            ["memberCount"] = 0,
+                        };
+                        convList.Add(JsonSerializer.SerializeToElement(convObj));
+                    }
+                }
+                // Try data array (some API versions return array of group objects)
+                else if (gData.TryGetProperty("data", out var gList) && gList.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var grp in gList.EnumerateArray())
+                    {
+                        var gid = grp.TryGetProperty("groupId", out var gidEl)
+                            ? gidEl.GetString()
+                            : grp.TryGetProperty("id", out var idEl)
+                                ? idEl.GetString()
+                                : null;
+                        if (string.IsNullOrEmpty(gid)) continue;
+
+                        var gName = grp.TryGetProperty("name", out var gnEl) ? gnEl.GetString() : gid;
+                        var gMemberCount = grp.TryGetProperty("totalMember", out var tmEl) ? tmEl.GetInt32() : 0;
+
+                        var convObj = new Dictionary<string, object?>
+                        {
+                            ["id"] = gid,
+                            ["type"] = 1,
+                            ["name"] = gName ?? gid,
+                            ["lastMsg"] = "",
+                            ["lastTime"] = 0L,
+                            ["memberCount"] = gMemberCount,
+                        };
+                        convList.Add(JsonSerializer.SerializeToElement(convObj));
+                        groupInfoDict[gid!] = grp.Clone();
+                    }
+                }
+                else if (gData.TryGetProperty("groups", out var groupsEl) && groupsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var grp in groupsEl.EnumerateArray())
+                    {
+                        var gid = grp.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                        if (string.IsNullOrEmpty(gid)) continue;
+                        var gName = grp.TryGetProperty("name", out var gnEl) ? gnEl.GetString() : gid;
+
+                        convList.Add(JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+                        {
+                            ["id"] = gid, ["type"] = 1, ["name"] = gName ?? gid,
+                            ["lastMsg"] = "", ["lastTime"] = 0L, ["memberCount"] = 0,
+                        }));
+                    }
+                }
+            }
+
+            // 3. Build final response in getContext format
+            var resultDict = new Dictionary<string, object?>
+            {
+                ["data"] = new Dictionary<string, object?>
+                {
+                    ["conversations"] = convList,
+                    ["profiles"] = profiles,
+                    ["groupInfo"] = groupInfoDict,
+                }
+            };
+
+            var result = new ZaloApiResponse<JsonElement>
+            {
+                Data = JsonSerializer.SerializeToElement(resultDict),
+                Error = null,
+            };
+
+            // Cache to avoid HTTP 429
+            _conversationCache = result;
+            _conversationCacheTime = DateTime.UtcNow;
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            return new ZaloApiResponse<JsonElement>
+            {
+                Data = default,
+                Error = ex.Message,
+            };
+        }
+    }
     public Task<ZaloApiResponse<JsonElement>> GetArchivedChatListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getArchivedChatList");
     public Task<ZaloApiResponse<JsonElement>> UpdateArchivedChatListAsync(string threadId, bool archive, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateArchivedChatList", new { threadId, archive, threadType });
     public Task<ZaloApiResponse<JsonElement>> GetHiddenConversationsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getHiddenConversations");

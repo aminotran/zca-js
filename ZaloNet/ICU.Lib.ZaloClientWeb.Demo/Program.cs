@@ -189,7 +189,9 @@ public class Program
             Console.WriteLine("5. Manage groups (list info)");
             Console.WriteLine("6. Get stickers");
             Console.WriteLine("7. Echo bot (auto-reply)");
-            Console.WriteLine("8. Exit");
+            Console.WriteLine("8. Show conversation list");
+            Console.WriteLine("9. Real-time Chat (select & send)");
+            Console.WriteLine("10. Exit");
             Console.Write("Choose: ");
 
             var choice = Console.ReadLine()?.Trim();
@@ -223,6 +225,12 @@ public class Program
                     await EchoBotDemo.RunAsync(api);
                     break;
                 case "8":
+                    await ConversationListDemo.RunAsync(api);
+                    break;
+                case "9":
+                    await ChatDemo.RunAsync(api);
+                    break;
+                case "10":
                     Console.WriteLine("Exiting...");
                     return;
                 default:
