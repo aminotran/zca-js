@@ -396,11 +396,7 @@ public static class ZaloUtils
         }
         else
         {
-            using var compressedStream = new System.IO.MemoryStream(decryptedBuffer);
-            using var deflateStream = new System.IO.Compression.DeflateStream(compressedStream, System.IO.Compression.CompressionMode.Decompress);
-            using var resultStream = new System.IO.MemoryStream();
-            await deflateStream.CopyToAsync(resultStream);
-            decompressedBuffer = resultStream.ToArray();
+            decompressedBuffer = TryDecompress(decryptedBuffer) ?? decryptedBuffer;
         }
 
         var decodedData = Encoding.UTF8.GetString(decompressedBuffer);
@@ -408,6 +404,57 @@ public static class ZaloUtils
             return default;
 
         return JsonSerializer.Deserialize<T>(decodedData);
+    }
+
+    /// <summary>
+    /// Attempts to decompress data using gzip, zlib-wrapped deflate, or raw deflate.
+    /// Returns null if all methods fail.
+    /// </summary>
+    private static byte[]? TryDecompress(byte[] data)
+    {
+        // Try gzip first (0x1F 0x8B)
+        if (data.Length > 2 && data[0] == 0x1F && data[1] == 0x8B)
+        {
+            try
+            {
+                using var gzStream = new System.IO.Compression.GZipStream(
+                    new System.IO.MemoryStream(data),
+                    System.IO.Compression.CompressionMode.Decompress);
+                using var resultStream = new System.IO.MemoryStream();
+                gzStream.CopyTo(resultStream);
+                return resultStream.ToArray();
+            }
+            catch { }
+        }
+
+        // Try raw deflate
+        try
+        {
+            using var rawStream = new System.IO.MemoryStream(data);
+            using var deflateStream = new System.IO.Compression.DeflateStream(
+                rawStream, System.IO.Compression.CompressionMode.Decompress);
+            using var resultStream = new System.IO.MemoryStream();
+            deflateStream.CopyTo(resultStream);
+            return resultStream.ToArray();
+        }
+        catch { }
+
+        // Try zlib-wrapped deflate (skip 2-byte header 0x78, 0x01/0x9C/0xDA)
+        if (data.Length > 2 && data[0] == 0x78)
+        {
+            try
+            {
+                using var zlibStream = new System.IO.MemoryStream(data, 2, data.Length - 2);
+                using var deflateStream = new System.IO.Compression.DeflateStream(
+                    zlibStream, System.IO.Compression.CompressionMode.Decompress);
+                using var resultStream = new System.IO.MemoryStream();
+                deflateStream.CopyTo(resultStream);
+                return resultStream.ToArray();
+            }
+            catch { }
+        }
+
+        return null;
     }
 
     private class ZaloResponseData
