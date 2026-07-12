@@ -434,6 +434,74 @@ public class ZaloApi
     }
 
     /// <summary>
+    /// Send an uploaded attachment as a message in a thread.
+    /// After calling UploadAttachmentAsync, use the returned result to send the attachment.
+    /// Equivalent to handleAttachment() in zca-js src/apis/sendMessage.ts.
+    /// </summary>
+    public async Task<ZaloApiResponse<JsonElement>> SendAttachmentMessageAsync(
+        UploadAttachmentResult uploadResult,
+        string threadId,
+        string? message = null,
+        ThreadType threadType = ThreadType.User)
+    {
+        var ts = GetTimestamp();
+        var isGroupMessage = threadType == ThreadType.Group;
+        var fileService = GetFileServiceUrl();
+
+        string urlType;
+        object paramsObj;
+
+        if (uploadResult.IsImage)
+        {
+            urlType = "photo_original/send?";
+            paramsObj = new
+            {
+                photoId = uploadResult.PhotoId,
+                clientId = ts.ToString(),
+                desc = message ?? "",
+                width = uploadResult.Width,
+                height = uploadResult.Height,
+                toid = isGroupMessage ? null : threadId,
+                grid = isGroupMessage ? threadId : (string?)null,
+                rawUrl = uploadResult.NormalUrl,
+                hdUrl = uploadResult.HdUrl,
+                thumbUrl = uploadResult.ThumbUrl,
+                oriUrl = isGroupMessage ? uploadResult.NormalUrl : (string?)null,
+                normalUrl = isGroupMessage ? (string?)null : uploadResult.NormalUrl,
+                hdSize = uploadResult.TotalSize.ToString(),
+                zsource = -1,
+                ttl = 0,
+                jcp = "{\"convertible\":\"jxl\"}",
+            };
+        }
+        else
+        {
+            urlType = "asyncfile/msg?";
+            paramsObj = new
+            {
+                fileId = uploadResult.FileId,
+                checksum = uploadResult.Checksum ?? "",
+                checksumSha = "",
+                extention = Path.GetExtension(uploadResult.FileName ?? "file").TrimStart('.'),
+                totalSize = uploadResult.TotalSize,
+                fileName = uploadResult.FileName ?? "file",
+                clientId = uploadResult.ClientFileId,
+                fType = 1,
+                fileCount = 0,
+                fdata = "{}",
+                toid = isGroupMessage ? null : threadId,
+                grid = isGroupMessage ? threadId : (string?)null,
+                fileUrl = uploadResult.FileUrl,
+                zsource = -1,
+                ttl = 0,
+            };
+        }
+
+        var url = ZaloUtils.MakeUrl($"{fileService}/api/{(isGroupMessage ? "group" : "message")}/{urlType}", null, _context.ApiVersion, _context.ApiType);
+        return await SendEncryptedPostToUrlAsync(url, paramsObj);
+    }
+
+    /// <summary>
     /// Upload files (images, videos, documents) to a thread.
     /// Equivalent to uploadAttachment() in zca-js src/apis/uploadAttachment.ts.
     /// Supports: jpg, jpeg, png, webp (image), mp4 (video), and other file types.
@@ -743,6 +811,54 @@ public class ZaloApi
         {
             // Silently fail individual chunk uploads
         }
+    }
+
+    private async Task<ZaloApiResponse<JsonElement>> SendEncryptedPostToUrlAsync(string url, object data)
+    {
+        var json = JsonSerializer.Serialize(data, _jsonOptions);
+        var encrypted = AesHelper.EncryptAesCbc(_context.SecretKey, json);
+        if (encrypted == null)
+            return new ZaloApiResponse<JsonElement> { Error = "Failed to encrypt" };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Add("User-Agent", _context.UserAgent);
+        if (!string.IsNullOrEmpty(_context.Imei))
+            request.Headers.Add("x-zalo-imei", _context.Imei);
+        request.Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["params"] = encrypted });
+
+        var response = await _httpClient.SendAsync(request);
+        var responseString = await response.Content.ReadAsStringAsync();
+
+        using var doc = JsonDocument.Parse(responseString);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("error_code", out var ecEl) || ecEl.GetInt32() != 0)
+        {
+            var errMsg = root.TryGetProperty("error_message", out var emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
+            var errCode = root.TryGetProperty("error_code", out var ecEl2) ? ecEl2.GetInt32() : -1;
+            return new ZaloApiResponse<JsonElement> { Error = errMsg, ErrorCode = errCode };
+        }
+
+        if (!root.TryGetProperty("data", out var dataEl))
+            return new ZaloApiResponse<JsonElement> { Error = "No data" };
+
+        var rawData = dataEl.GetString();
+        if (string.IsNullOrEmpty(rawData))
+            return new ZaloApiResponse<JsonElement> { Data = JsonDocument.Parse("{}").RootElement.Clone() };
+
+        var decrypted = AesHelper.DecryptAesCbc(_context.SecretKey, rawData);
+        if (decrypted == null)
+            return new ZaloApiResponse<JsonElement> { Error = "Failed to decrypt" };
+
+        using var innerDoc = JsonDocument.Parse(decrypted);
+        var innerRoot = innerDoc.RootElement;
+        if (innerRoot.TryGetProperty("error_code", out var iEc) && iEc.GetInt32() != 0)
+        {
+            var iMsg = innerRoot.TryGetProperty("error_message", out var iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
+            return new ZaloApiResponse<JsonElement> { Error = iMsg, ErrorCode = iEc.GetInt32() };
+        }
+
+        var respData = innerRoot.TryGetProperty("data", out var iData) ? iData.Clone() : innerRoot.Clone();
+        return new ZaloApiResponse<JsonElement> { Data = respData };
     }
 
     private string? EncodeAes(string json)

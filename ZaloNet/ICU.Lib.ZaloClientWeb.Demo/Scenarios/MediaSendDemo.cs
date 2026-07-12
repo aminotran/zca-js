@@ -195,6 +195,9 @@ public static class MediaSendDemo
             return;
         }
 
+        Console.Write("Optional message (press Enter for no caption): ");
+        var msg = Console.ReadLine()?.Trim();
+
         Console.WriteLine($"Uploading image ({filePath})...");
         try
         {
@@ -212,10 +215,11 @@ public static class MediaSendDemo
 
                 // After upload, send the attachment as a message
                 Console.WriteLine("Sending attachment as message...");
-                // Build the attachment data for the upload result
-                // Note: This requires SendMessageAsync to support attachments
-                // For now, just show the upload result
-                Console.WriteLine("(Upload complete. Direct message sending with attachment needs SendMessageAsync update.)");
+                var sendResult = await api.SendAttachmentMessageAsync(r, threadId, msg, threadType);
+                if (sendResult.IsSuccess)
+                    Console.WriteLine($"✅ Attachment sent! Data: {PrettyPrint(sendResult.Data)}");
+                else
+                    Console.WriteLine($"❌ Send failed: {sendResult.Error} (code: {sendResult.ErrorCode})");
             }
             else
             {
@@ -242,6 +246,9 @@ public static class MediaSendDemo
             return;
         }
 
+        Console.Write("Optional message (press Enter for no caption): ");
+        var msg = Console.ReadLine()?.Trim();
+
         Console.WriteLine($"Uploading file ({filePath})...");
         try
         {
@@ -256,6 +263,14 @@ public static class MediaSendDemo
                 var r = uploadResults[0];
                 var fileUrlPreview = r.FileUrl?.Length > 80 ? r.FileUrl[..80] + "..." : r.FileUrl;
                 Console.WriteLine($"✅ Upload success! Type={r.FileType}, FileId={r.FileId}, FileUrl={fileUrlPreview}, Checksum={r.Checksum}");
+
+                // After upload, send the file as a message
+                Console.WriteLine("Sending file as message...");
+                var sendResult = await api.SendAttachmentMessageAsync(r, threadId, msg, threadType);
+                if (sendResult.IsSuccess)
+                    Console.WriteLine($"✅ File sent! Data: {PrettyPrint(sendResult.Data)}");
+                else
+                    Console.WriteLine($"❌ Send failed: {sendResult.Error} (code: {sendResult.ErrorCode})");
             }
             else
             {
