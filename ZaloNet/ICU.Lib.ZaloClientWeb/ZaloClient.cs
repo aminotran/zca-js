@@ -190,7 +190,7 @@ public class ZaloApi
     public Task<ZaloApiResponse<JsonElement>> GetFullAvatarAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getFullAvatar");
     public Task<ZaloApiResponse<JsonElement>> DeleteAvatarAsync(long avatarId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "deleteAvatar", new { avatarId });
     public Task<ZaloApiResponse<JsonElement>> ReuseAvatarAsync(long avatarId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "reuseAvatar", new { avatarId });
-    public Task<ZaloApiResponse<JsonElement>> GetAllFriendsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAllFriends");
+    public Task<ZaloApiResponse<JsonElement>> GetAllFriendsAsync() => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getAllFriends", new { incInvalid = 1, page = 1, count = 20000, avatar_size = 120, actiontime = 0, imei = _context.Imei });
     public Task<ZaloApiResponse<JsonElement>> GetFriendRequestStatusAsync(long friendId) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getFriendRequestStatus", new { fid = friendId, imei = _context.Imei });
     public Task<ZaloApiResponse<JsonElement>> SendFriendRequestAsync(long userId, string? message = null) => ApiMethods.CallPostApiAsync(_context, _httpClient, "sendFriendRequest", new { userId, message });
     public Task<ZaloApiResponse<JsonElement>> AcceptFriendRequestAsync(long userId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "acceptFriendRequest", new { userId });
