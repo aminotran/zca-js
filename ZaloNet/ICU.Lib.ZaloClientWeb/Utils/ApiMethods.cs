@@ -20,9 +20,6 @@ public static class ApiMethods
         WriteIndented = false
     };
 
-    /// <summary>
-    /// Maps endpoint name to service key (used to resolve the base host via ZpwServiceMapV3).
-    /// </summary>
     private static readonly Dictionary<string, string> EndpointToServiceMap = new(StringComparer.OrdinalIgnoreCase)
     {
         ["fetchAccountInfo"] = "profile", ["updateProfile"] = "profile",
@@ -46,9 +43,20 @@ public static class ApiMethods
         ["getFriendRecommendations"] = "friend", ["changeFriendAlias"] = "alias",
         ["removeFriendAlias"] = "alias", ["getSentFriendRequest"] = "friend",
         ["getRelatedFriendGroup"] = "friend", ["getMultiUsersByPhones"] = "friend",
-        ["sendMessageGroup"] = "group", ["inviteUserToGroups"] = "group", ["getAliasList"] = "alias",
+        ["inviteUserToGroups"] = "group", ["getAliasList"] = "alias",
         ["sendFriendRequest"] = "friend", ["getFriendRequestStatus"] = "friend",
         ["getFriendBoardList"] = "friend_board",
+
+        ["sendMessageGroup"] = "group", ["sendStickerGroup"] = "group",
+        ["deleteMessageGroup"] = "group", ["undoGroup"] = "group",
+        ["sendSeenEventGroup"] = "group", ["sendDeliveredEventGroup"] = "group",
+        ["sendTypingEventGroup"] = "group",
+        ["sendLinkGroup"] = "group",
+
+        // sendVideo/sendVoice/sendCard for GROUP use file service
+        ["sendVideoGroup"] = "file", ["sendVoiceGroup"] = "file", ["sendCardGroup"] = "file",
+        // sendVideo/sendVoice/sendCard for USER use file service
+        ["sendVideo"] = "file", ["sendVoice"] = "file", ["sendCard"] = "file",
 
         ["getContext"] = "conversation", ["getArchivedChatList"] = "label",
         ["updateArchivedChatList"] = "label", ["getHiddenConversations"] = "conversation",
@@ -78,8 +86,7 @@ public static class ApiMethods
         ["keepAlive"] = "chat",
 
         ["sendMessage"] = "chat", ["sendSticker"] = "chat",
-        ["sendLink"] = "chat", ["sendVideo"] = "chat",
-        ["sendVoice"] = "chat", ["sendCard"] = "chat",
+        ["sendLink"] = "chat",
         ["sendBankCard"] = "zimsg", ["forwardMessage"] = "chat",
         ["deleteMessage"] = "chat", ["undo"] = "chat",
         ["sendTypingEvent"] = "chat", ["sendSeenEvent"] = "chat",
@@ -115,13 +122,8 @@ public static class ApiMethods
         ["getLabels"] = "label", ["updateLabels"] = "label",
     };
 
-    /// <summary>
-    /// Maps endpoint name to the actual API path suffix (used after the base host from ZpwServiceMapV3).
-    /// These are the REAL paths from zca-js TypeScript source, NOT generic "api/{endpointName}".
-    /// </summary>
     private static readonly Dictionary<string, string> EndpointToPathMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        // Profile service
         ["fetchAccountInfo"] = "/api/social/profile/me-v2",
         ["getAllFriends"] = "/api/social/friend/getfriends",
         ["getUserInfo"] = "/api/social/friend/getprofiles/v2",
@@ -141,11 +143,11 @@ public static class ApiMethods
         ["getSettings"] = "/api/social/profile/getsetting",
         ["updateSettings"] = "/api/social/profile/setSetting",
         ["updateLang"] = "/api/social/profile/updatelang",
-        ["updateActiveStatus"] = "/api/social/profile/activeTime",
+        ["updateActiveStatus"] = "/api/social/profile/ping",
         ["getCookie"] = "/api/social/profile/getCookie",
-        ["sendReport"] = "/api/social/profile/report",
+        ["sendReport"] = "/api/report/abuse-v2",
+        ["sendReportGroup"] = "/api/social/profile/reportabuse",
 
-        // Friend service
         ["acceptFriendRequest"] = "/api/friend/accept",
         ["rejectFriendRequest"] = "/api/friend/reject",
         ["removeFriend"] = "/api/friend/remove",
@@ -163,15 +165,11 @@ public static class ApiMethods
         ["getMultiUsersByPhones"] = "/api/friend/profile/multiget",
         ["getQR"] = "/api/friend/mget-qr",
 
-        // Friend Board service
         ["getFriendBoardList"] = "/api/friendboard/list",
-
-        // Alias service
         ["changeFriendAlias"] = "/api/alias/update",
         ["removeFriendAlias"] = "/api/alias/remove",
         ["getAliasList"] = "/api/alias/list",
 
-        // Conversation service
         ["getContext"] = "/api/conv/get_lsv3",
         ["getHiddenConversations"] = "/api/hiddenconvers/get-all",
         ["setHiddenConversations"] = "/api/hiddenconvers/add-remove",
@@ -188,13 +186,11 @@ public static class ApiMethods
         ["setMuteConversation"] = "/api/conv/setchatmute",
         ["getMuteConversation"] = "/api/conv/getchatmute",
 
-        // Label service for archived chats + labels
         ["getArchivedChatList"] = "/api/archivedchat/list",
         ["updateArchivedChatList"] = "/api/archivedchat/update",
         ["getLabels"] = "/api/convlabel/get",
         ["updateLabels"] = "/api/convlabel/update",
 
-        // Group service
         ["createGroup"] = "/api/group/create/v2",
         ["getGroupInfo"] = "/api/group/getmg-v2",
         ["getGroupMembersInfo"] = "/api/social/group/members",
@@ -224,44 +220,47 @@ public static class ApiMethods
         ["deleteGroupInviteBox"] = "/api/group/inv-box/mdel-inv",
         ["upgradeGroupToCommunity"] = "/api/group/upgrade/community",
 
-        // Group Poll service
+        ["sendMessageGroup"] = "/api/group/sendmsg",
+        ["sendStickerGroup"] = "/api/group/sticker",
+        ["deleteMessageGroup"] = "/api/group/deletemsg",
+        ["sendSeenEventGroup"] = "/api/group/seensent",
+        ["sendDeliveredEventGroup"] = "/api/group/deliveredsent",
+        ["sendTypingEventGroup"] = "/api/group/typing",
+
         ["getAllGroups"] = "/api/group/getlg/v4",
 
-        // Chat service
         ["sendMessage"] = "/api/message/sms",
         ["sendSticker"] = "/api/message/sticker",
         ["sendLink"] = "/api/message/sendlink",
+        ["sendVideo"] = "/api/message/forward",
+        ["sendVoice"] = "/api/message/forward",
+        ["sendCard"] = "/api/message/forward",
         ["forwardMessage"] = "/api/message/forward",
         ["deleteMessage"] = "/api/message/delete",
         ["undo"] = "/api/message/undo",
         ["sendTypingEvent"] = "/api/message/typing",
         ["sendSeenEvent"] = "/api/message/seensent",
         ["sendDeliveredEvent"] = "/api/message/deliveredsent",
+        ["sendLinkGroup"] = "/api/group/sendlink",
+        ["sendVideoGroup"] = "/api/group/forward",
+        ["sendVoiceGroup"] = "/api/group/forward",
+        ["sendCardGroup"] = "/api/group/forward",
 
-        // Group chat service (for group messages)
-        ["sendMessageGroup"] = "/api/group/sendmsg",
-        ["sendStickerGroup"] = "/api/group/sticker",
-
-        // zimsg service
         ["sendBankCard"] = "/api/transfer/card",
 
-        // File service
         ["changeAccountAvatar"] = "/api/profile/upavatar",
         ["changeGroupAvatar"] = "/api/group/upavatar",
         ["uploadAttachment"] = "/api/msgfile/upload",
         ["uploadProductPhoto"] = "/api/product/upload/photo",
         ["parseLink"] = "/api/message/parselink",
 
-        // Reaction service
         ["addReaction"] = "/api/reaction/add",
 
-        // Sticker service
         ["getStickers"] = "/api/message/sticker/suggest/stickers",
         ["getStickersDetail"] = "/api/message/sticker/sticker_detail",
         ["getStickerCategoryDetail"] = "/api/message/sticker/category/sticker_detail",
         ["searchSticker"] = "/api/message/sticker/search",
 
-        // Poll service (group)
         ["createPoll"] = "/api/poll/create",
         ["getPollDetail"] = "/api/poll/detail",
         ["addPollOptions"] = "/api/poll/option/add",
@@ -269,20 +268,17 @@ public static class ApiMethods
         ["lockPoll"] = "/api/poll/end",
         ["sharePoll"] = "/api/poll/share",
 
-        // Reminder service
         ["createReminder"] = "/api/group/scheduler/add",
         ["editReminder"] = "/api/group/scheduler/update",
         ["removeReminder"] = "/api/group/scheduler/remove",
         ["getListReminder"] = "/api/group/scheduler/list",
 
-        // Group Board service
         ["getReminder"] = "/api/board/topic/getReminder",
         ["getReminderResponses"] = "/api/board/topic/listResponseEvent",
         ["getListBoard"] = "/api/board/list",
         ["createNote"] = "/api/board/topic/createv2",
         ["editNote"] = "/api/board/topic/updatev2",
 
-        // Catalog service
         ["createCatalog"] = "/api/prodcatalog/catalog/create",
         ["updateCatalog"] = "/api/prodcatalog/catalog/update",
         ["deleteCatalog"] = "/api/prodcatalog/catalog/delete",
@@ -292,45 +288,30 @@ public static class ApiMethods
         ["deleteProductCatalog"] = "/api/prodcatalog/product/mdelete",
         ["getProductCatalogList"] = "/api/prodcatalog/product/list",
 
-        // Auto Reply service
         ["createAutoReply"] = "/api/autoreply/create",
         ["updateAutoReply"] = "/api/autoreply/update",
         ["deleteAutoReply"] = "/api/autoreply/delete",
         ["getAutoReplyList"] = "/api/autoreply/list",
 
-        // Quick Message service
         ["addQuickMessage"] = "/api/quickmessage/create",
         ["updateQuickMessage"] = "/api/quickmessage/update",
         ["removeQuickMessage"] = "/api/quickmessage/delete",
         ["getQuickMessageList"] = "/api/quickmessage/list",
 
-        // Keep alive (special: no /api/ prefix)
         ["keepAlive"] = "/keepalive",
     };
 
-    /// <summary>
-    /// Resolves the full API URL for an endpoint using Zalo's service map and the real path mapping.
-    /// </summary>
     private static string ResolveBaseUrl(ZaloContext ctx, string endpoint)
     {
         if (endpoint.StartsWith("http")) return endpoint;
-
-        // Get the path from the real path mapping
         string apiPath;
         if (!EndpointToPathMap.TryGetValue(endpoint, out apiPath))
-        {
-            // Fallback to generic pattern if not in map
             apiPath = $"/api/{endpoint}";
-        }
-
-        // Get the base host from the service map
         if (EndpointToServiceMap.TryGetValue(endpoint, out var serviceKey))
         {
             if (ctx.ZpwServiceMapV3.TryGetValue(serviceKey, out var urls) && urls.Length > 0)
                 return $"{urls[0].TrimEnd('/')}{apiPath}";
         }
-
-        // Fallback to wpa.chat.zalo.me
         return $"https://wpa.chat.zalo.me{apiPath}";
     }
 
@@ -354,14 +335,9 @@ public static class ApiMethods
         return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Get, endpoint);
     }
 
-    /// <summary>
-    /// Makes a GET API request with AES-encrypted params as query parameter.
-    /// Matches TypeScript pattern: utils.request(utils.makeURL(serviceURL, { params: encryptedParams }), { method: "GET" })
-    /// </summary>
     public static async Task<ZaloApiResponse<JsonElement>> CallEncryptedGetApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? parameters = null)
     {
         var baseUrl = BuildApiUrl(ctx, endpoint);
-        // Serialize params to JSON and encrypt with AES
         string encryptedParams;
         if (parameters != null)
         {
@@ -382,10 +358,6 @@ public static class ApiMethods
         return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Post, endpoint, data);
     }
 
-    /// <summary>
-    /// Makes a POST API request with AES-encrypted params sent as form field "params".
-    /// Matches TypeScript pattern: utils.request(serviceURL, { method: "POST", body: new URLSearchParams({ params: encryptedParams }) })
-    /// </summary>
     public static async Task<ZaloApiResponse<JsonElement>> CallEncryptedPostApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? data = null)
     {
         var url = BuildApiUrl(ctx, endpoint);
@@ -398,25 +370,6 @@ public static class ApiMethods
         return await SendApiRequestAsync(ctx, httpClient, url, isGet ? HttpMethod.Get : HttpMethod.Post, endpoint, data);
     }
 
-    /// <summary>
-    /// Builds a URL for sending a group message (uses group service URL instead of chat service).
-    /// </summary>
-    public static string BuildGroupMessageUrl(ZaloContext ctx, string groupEndpoint)
-    {
-        if (ctx.ZpwServiceMapV3.TryGetValue("group", out var urls) && urls.Length > 0)
-        {
-            string path;
-            if (!EndpointToPathMap.TryGetValue(groupEndpoint, out path))
-                path = $"/api/{groupEndpoint}";
-            return ZaloUtils.MakeUrl($"{urls[0].TrimEnd('/')}{path}", null, ctx.ApiVersion, ctx.ApiType);
-        }
-        return BuildApiUrl(ctx, groupEndpoint);
-    }
-
-    /// <summary>
-    /// Sends a POST request with AES-encrypted params as form field "params".
-    /// Matches TS: utils.request(url, { method: "POST", body: new URLSearchParams({ params: encryptedParams }) })
-    /// </summary>
     private static async Task<ZaloApiResponse<JsonElement>> SendApiEncryptedRequestAsync(ZaloContext ctx, HttpClient httpClient, string url, HttpMethod method, string? endpoint = null, object? data = null)
     {
         try
@@ -425,52 +378,41 @@ public static class ApiMethods
             request.Headers.Add("User-Agent", ctx.UserAgent);
             if (!string.IsNullOrEmpty(ctx.Imei))
                 request.Headers.Add("x-zalo-imei", ctx.Imei);
-
             var cookieHeader = GetCookieHeaderForUrl(ctx.CookieContainer, url);
             if (!string.IsNullOrEmpty(cookieHeader))
                 request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-
             if (data != null)
             {
                 var json = JsonSerializer.Serialize(data, _jsonOptions);
                 var encrypted = !string.IsNullOrEmpty(ctx.SecretKey)
-                    ? AesHelper.EncryptAesCbc(ctx.SecretKey, json) ?? json
-                    : json;
+                    ? AesHelper.EncryptAesCbc(ctx.SecretKey, json) ?? json : json;
                 request.Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["params"] = encrypted });
             }
-
             var response = await httpClient.SendAsync(request);
             var responseString = await response.Content.ReadAsStringAsync();
-
             if (ctx.Options.Logging && endpoint != null)
             {
                 var preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;
                 ctx.Options.ApiLogCallback?.Invoke($"[API] {method} {url} → HTTP {(int)response.StatusCode} | {preview}");
             }
-
             if (!response.IsSuccessStatusCode)
                 return new ZaloApiResponse<JsonElement> { Error = $"HTTP {(int)response.StatusCode}: {method} {url}" };
-
             using var doc = JsonDocument.Parse(responseString);
             var root = doc.RootElement;
-
             if (!root.TryGetProperty("error_code", out var ecEl) || ecEl.GetInt32() != 0)
             {
                 var errMsg = root.TryGetProperty("error_message", out var emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
                 var errCode = root.TryGetProperty("error_code", out var ecEl2) ? ecEl2.GetInt32() : -1;
                 return new ZaloApiResponse<JsonElement> { Error = errMsg, ErrorCode = errCode };
             }
-
             if (!root.TryGetProperty("data", out var dataEl))
                 return new ZaloApiResponse<JsonElement> { Error = "No data" };
-
             var rawData = dataEl.GetString();
             if (string.IsNullOrEmpty(rawData))
             {
                 using var e = JsonDocument.Parse("{}");
                 return new ZaloApiResponse<JsonElement> { Data = e.RootElement.Clone() };
             }
-
             string decrypted;
             if (!string.IsNullOrEmpty(ctx.SecretKey))
             {
@@ -478,16 +420,13 @@ public static class ApiMethods
                 if (decrypted == null) return new ZaloApiResponse<JsonElement> { Error = "Failed to decrypt" };
             }
             else decrypted = rawData;
-
             using var innerDoc = JsonDocument.Parse(decrypted);
             var innerRoot = innerDoc.RootElement;
-
             if (innerRoot.TryGetProperty("error_code", out var iEc) && iEc.GetInt32() != 0)
             {
                 var iMsg = innerRoot.TryGetProperty("error_message", out var iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
                 return new ZaloApiResponse<JsonElement> { Error = iMsg, ErrorCode = iEc.GetInt32() };
             }
-
             var respData = innerRoot.TryGetProperty("data", out var iData) ? iData.Clone() : innerRoot.Clone();
             return new ZaloApiResponse<JsonElement> { Data = respData };
         }
@@ -508,12 +447,9 @@ public static class ApiMethods
             request.Headers.Add("User-Agent", ctx.UserAgent);
             if (!string.IsNullOrEmpty(ctx.Imei))
                 request.Headers.Add("x-zalo-imei", ctx.Imei);
-
-            // Force-add cookies as header to ensure they're sent to ALL subdomains
             var cookieHeader = GetCookieHeaderForUrl(ctx.CookieContainer, url);
             if (!string.IsNullOrEmpty(cookieHeader))
                 request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
-
             if (data != null && method == HttpMethod.Post)
             {
                 var json = JsonSerializer.Serialize(data, _jsonOptions);
@@ -525,40 +461,31 @@ public static class ApiMethods
                 }
                 request.Content = new FormUrlEncodedContent(formData);
             }
-
             var response = await httpClient.SendAsync(request);
             var responseString = await response.Content.ReadAsStringAsync();
-
-            // Always log API calls when logging is enabled
             if (ctx.Options.Logging && endpoint != null)
             {
                 var preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;
                 ctx.Options.ApiLogCallback?.Invoke($"[API] {method} {url} → HTTP {(int)response.StatusCode} | {preview}");
             }
-
             if (!response.IsSuccessStatusCode)
                 return new ZaloApiResponse<JsonElement> { Error = $"HTTP {(int)response.StatusCode}: {method} {url}" };
-
             using var doc = JsonDocument.Parse(responseString);
             var root = doc.RootElement;
-
             if (!root.TryGetProperty("error_code", out var ecEl) || ecEl.GetInt32() != 0)
             {
                 var errMsg = root.TryGetProperty("error_message", out var emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
                 var errCode = root.TryGetProperty("error_code", out var ecEl2) ? ecEl2.GetInt32() : -1;
                 return new ZaloApiResponse<JsonElement> { Error = errMsg, ErrorCode = errCode };
             }
-
             if (!root.TryGetProperty("data", out var dataEl))
                 return new ZaloApiResponse<JsonElement> { Error = "No data" };
-
             var rawData = dataEl.GetString();
             if (string.IsNullOrEmpty(rawData))
             {
                 using var e = JsonDocument.Parse("{}");
                 return new ZaloApiResponse<JsonElement> { Data = e.RootElement.Clone() };
             }
-
             string decrypted;
             if (!string.IsNullOrEmpty(ctx.SecretKey))
             {
@@ -566,16 +493,13 @@ public static class ApiMethods
                 if (decrypted == null) return new ZaloApiResponse<JsonElement> { Error = "Failed to decrypt" };
             }
             else decrypted = rawData;
-
             using var innerDoc = JsonDocument.Parse(decrypted);
             var innerRoot = innerDoc.RootElement;
-
             if (innerRoot.TryGetProperty("error_code", out var iEc) && iEc.GetInt32() != 0)
             {
                 var iMsg = innerRoot.TryGetProperty("error_message", out var iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
                 return new ZaloApiResponse<JsonElement> { Error = iMsg, ErrorCode = iEc.GetInt32() };
             }
-
             var respData = innerRoot.TryGetProperty("data", out var iData) ? iData.Clone() : innerRoot.Clone();
             return new ZaloApiResponse<JsonElement> { Data = respData };
         }
@@ -588,33 +512,13 @@ public static class ApiMethods
         }
     }
 
-    /// <summary>
-    /// Extracts cookies from a CookieContainer for the given URL.
-    /// </summary>
     private static string GetCookieHeaderForUrl(CookieContainer container, string url)
     {
-        try
-        {
-            var uri = new Uri(url);
-            var cookies = container.GetCookies(uri);
-            var sb = new StringBuilder();
-            foreach (Cookie cookie in cookies)
-            {
-                if (sb.Length > 0) sb.Append("; ");
-                sb.Append($"{cookie.Name}={cookie.Value}");
-            }
-            return sb.ToString();
-        }
-        catch
-        {
-            return "";
-        }
+        try { var uri = new Uri(url); var cookies = container.GetCookies(uri); var sb = new StringBuilder(); foreach (Cookie cookie in cookies) { if (sb.Length > 0) sb.Append("; "); sb.Append($"{cookie.Name}={cookie.Value}"); } return sb.ToString(); } catch { return ""; }
     }
 
     private static Dictionary<string, object?> ObjectToDictionary(object obj)
     {
-        return obj.GetType()
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .ToDictionary(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..], p => p.GetValue(obj));
+        return obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..], p => p.GetValue(obj));
     }
 }
