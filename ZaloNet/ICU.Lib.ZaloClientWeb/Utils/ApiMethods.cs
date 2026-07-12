@@ -231,7 +231,7 @@ public static class ApiMethods
 
         ["sendMessage"] = "/api/message/sms",
         ["sendSticker"] = "/api/message/sticker",
-        ["sendLink"] = "/api/message/sendlink",
+        ["sendLink"] = "/api/message/link",
         ["sendVideo"] = "/api/message/forward",
         ["sendVoice"] = "/api/message/forward",
         ["sendCard"] = "/api/message/forward",

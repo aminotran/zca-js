@@ -241,13 +241,23 @@ public class ZaloApi
 
         if (parseResult.IsSuccess)
         {
+            // parseLink response: { data: { href,src,title,desc,thumb,media,... }, error_maps:{} }
+            // CallEncryptedGetApiAsync already unwraps the outer data field
             var data = parseResult.Data;
+            // The actual link data is nested under "data" property
+            if (data.TryGetProperty("data", out var linkData))
+                data = linkData;
+
             href = TryGetString(data, "href") ?? link;
             src = TryGetString(data, "src") ?? "";
             title = TryGetString(data, "title") ?? "";
             desc = TryGetString(data, "desc") ?? "";
             thumb = TryGetString(data, "thumb") ?? "";
-            media = TryGetString(data, "media") ?? "[]";
+            // TS: media = JSON.stringify(res.data.media) — media is an object, not a string
+            if (data.TryGetProperty("media", out var mediaEl) && mediaEl.ValueKind == JsonValueKind.Object)
+                media = JsonSerializer.Serialize(mediaEl, _jsonOptions);
+            else if (data.TryGetProperty("media", out var mediaStr) && mediaStr.ValueKind == JsonValueKind.String)
+                media = mediaStr.GetString() ?? "[]";
         }
 
         var finalMsg = !string.IsNullOrEmpty(msg) ? (msg!.Contains(link) ? msg : msg + " " + link) : link;
@@ -255,8 +265,12 @@ public class ZaloApi
             return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendLinkGroup",
                 new { msg = finalMsg, href, src, title, desc, thumb, type = 2, media, ttl = 0, clientId = ts, grid = threadId, imei = GetImei() });
         else
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendLink",
-                new { msg = finalMsg, href, src, title, desc, thumb, type = 2, media, ttl = 0, clientId = ts, toId = threadId });
+        {
+            var sendParams = new { msg = finalMsg, href, src, title, desc, thumb, type = 2, media, ttl = 0, clientId = ts, toId = threadId, mentionInfo = "" };
+            Console.Error.WriteLine($"[SENDLINK] raw JSON: {System.Text.Json.JsonSerializer.Serialize(sendParams, _jsonOptions)}");
+            Console.Error.WriteLine($"[SENDLINK] href={href} src={src} title={title} desc={desc} thumb={thumb} media={media}");
+            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendLink", sendParams);
+        }
     }
 
     private static string? TryGetString(JsonElement el, string key)
@@ -958,7 +972,7 @@ public class ZaloApi
     public Task<ZaloApiResponse<JsonElement>> LastOnlineAsync(long userId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "lastOnline", new { userId });
     public Task<ZaloApiResponse<JsonElement>> GetQrAsync(string userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "getQR", new { fids = new[] { userId } });
     public Task<ZaloApiResponse<JsonElement>> GetCookieAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getCookie");
-    public Task<ZaloApiResponse<JsonElement>> ParseLinkAsync(string url) => ApiMethods.CallGetApiAsync(_context, _httpClient, "parseLink", new { url });
+    public Task<ZaloApiResponse<JsonElement>> ParseLinkAsync(string url) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "parseLink", new { link = url, version = 1, imei = GetImei() });
 
     // ─── Report API (encrypted POST for both user/group) ─────────────────
     public Task<ZaloApiResponse<JsonElement>> SendReportAsync(string threadId, int reason, string? content = null, ThreadType threadType = ThreadType.User)

@@ -19,6 +19,13 @@ public class Program
         // Support Vietnamese UTF-8 characters in console
         Console.OutputEncoding = System.Text.Encoding.UTF8;
 
+        // Quick test mode for SendLink
+        if (args.Length > 0 && args[0] == "testlink")
+        {
+            await TestSendLink.RunAsync(args);
+            return;
+        }
+
         Console.WriteLine("===========================================");
         Console.WriteLine("   ICU.Lib.ZaloClientWeb Demo Application");
         Console.WriteLine("   Unofficial Zalo API for .NET");
@@ -191,7 +198,8 @@ public class Program
             Console.WriteLine("7. Echo bot (auto-reply)");
             Console.WriteLine("8. Show conversation list");
             Console.WriteLine("9. Real-time Chat (select & send)");
-            Console.WriteLine("10. Exit");
+            Console.WriteLine("10. Test send media APIs (link/video/voice/card/upload)");
+            Console.WriteLine("11. Exit");
             Console.Write("Choose: ");
 
             var choice = Console.ReadLine()?.Trim();
@@ -231,6 +239,9 @@ public class Program
                     await ChatDemo.RunAsync(api);
                     break;
                 case "10":
+                    await MediaSendDemo.RunAsync(api);
+                    break;
+                case "11":
                     Console.WriteLine("Exiting...");
                     return;
                 default:
