@@ -347,10 +347,13 @@ public class ZaloListener : IDisposable
 
                         if (actStr == "file_done")
                         {
-                            var fileUrl = ctrlContent.TryGetProperty("data", out var fileData)
-                                && fileData.TryGetProperty("url", out var urlEl) ? urlEl.GetString() : null;
                             var fileId = ctrlContent.TryGetProperty("fileId", out var fidEl) ? fidEl.GetString() : null;
                             _logger.Info($"📎 [FILE UPLOAD] id={fileId}");
+                            if (fileId != null && _context.UploadCallbacks.TryGetValue(fileId, out var callback))
+                            {
+                                _context.UploadCallbacks.Remove(fileId);
+                                callback(ctrlContent);
+                            }
                             continue;
                         }
 

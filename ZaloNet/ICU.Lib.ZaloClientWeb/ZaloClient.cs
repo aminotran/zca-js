@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using ICU.Lib.ZaloClientWeb.Auth;
+using ICU.Lib.ZaloClientWeb.Crypto;
 using ICU.Lib.ZaloClientWeb.Exceptions;
 using ICU.Lib.ZaloClientWeb.Models;
 using ICU.Lib.ZaloClientWeb.Models.Types;
@@ -416,7 +419,367 @@ public class ZaloApi
             new { react_list = new[] { new { msgId = messageId, reactIcon = reactionIcon, reactType = 0 } }, clientId = ts, imei = GetImei() });
     }
 
-    public Task<ZaloApiResponse<JsonElement>> UploadAttachmentAsync(string filePath) => Task.FromResult(new ZaloApiResponse<JsonElement> { Error = "Not implemented: file upload required" });
+    /// <summary>
+    /// Upload files (images, videos, documents) to a thread.
+    /// Equivalent to uploadAttachment() in zca-js src/apis/uploadAttachment.ts.
+    /// Supports: jpg, jpeg, png, webp (image), mp4 (video), and other file types.
+    /// Image uploads return immediately; video/file uploads wait for WebSocket confirm.
+    /// </summary>
+    public async Task<List<UploadAttachmentResult>> UploadAttachmentAsync(
+        object[] sources,
+        string threadId,
+        ThreadType type = ThreadType.User)
+    {
+        if (sources == null || sources.Length == 0)
+            throw new InvalidOperationException("Missing sources");
+        if (string.IsNullOrEmpty(threadId))
+            throw new InvalidOperationException("Missing threadId");
+
+        var isGroupMessage = type == ThreadType.Group;
+        var fileService = GetFileServiceUrl();
+        var urlPrefix = $"{fileService}/api/{(isGroupMessage ? "group" : "message")}/";
+        var typeParam = isGroupMessage ? "11" : "2";
+
+        var chunkSize = GetShareFileSetting("chunk_size_file", 491520);
+        var maxFile = GetShareFileSetting("max_file", 10);
+        var maxSizeMb = GetShareFileSetting("max_size_share_file_v3", 50);
+
+        if (sources.Length > maxFile)
+            throw new InvalidOperationException($"Exceed maximum file of {maxFile}");
+
+        var attachmentsData = new List<(string filePath, byte[] fileBuffer, string fileName, string extFile, string fileType, long totalSize, int width, int height, int totalChunk, long clientId, object[] chunkContents)>();
+        long baseClientId = GetTimestamp();
+
+        for (int srcIdx = 0; srcIdx < sources.Length; srcIdx++)
+        {
+            var source = sources[srcIdx];
+            bool isFilePath = source is string;
+            bool isBuffer = source is byte[];
+
+            if (!isFilePath && !isBuffer)
+                throw new InvalidOperationException("Invalid source type: must be file path (string) or byte array");
+
+            byte[] fileBuffer;
+            string filePath;
+            string fileName;
+
+            if (isFilePath)
+            {
+                filePath = (string)source;
+                if (!File.Exists(filePath))
+                    throw new InvalidOperationException($"File not found: {filePath}");
+                fileBuffer = await File.ReadAllBytesAsync(filePath);
+                fileName = Path.GetFileName(filePath);
+            }
+            else
+            {
+                fileBuffer = (byte[])source;
+                filePath = $"buffer_{srcIdx}";
+                fileName = $"file_{srcIdx}";
+            }
+
+            var extFile = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+
+            // Validate extension
+            var restrictedExt = GetRestrictedExtensions();
+            if (restrictedExt.Contains(extFile))
+                throw new InvalidOperationException($"File extension \"{extFile}\" is not allowed");
+
+            long totalSize = fileBuffer.Length;
+            int width = 0, height = 0;
+            string fileType;
+
+            switch (extFile)
+            {
+                case "jpg":
+                case "jpeg":
+                case "png":
+                case "webp":
+                {
+                    if (totalSize > maxSizeMb * 1024L * 1024L)
+                        throw new InvalidOperationException($"File {fileName} size exceed maximum size of {maxSizeMb}MB");
+
+                    fileType = "image";
+
+                    // Try to get image dimensions from metadata
+                    if (_context.Options.ImageMetadataGetter != null && isFilePath)
+                    {
+                        var meta = await _context.Options.ImageMetadataGetter(filePath);
+                        if (meta != null)
+                        {
+                            width = meta.Width;
+                            height = meta.Height;
+                        }
+                    }
+
+                    break;
+                }
+                case "mp4":
+                {
+                    if (totalSize > maxSizeMb * 1024L * 1024L)
+                        throw new InvalidOperationException($"File {fileName} size exceed maximum size of {maxSizeMb}MB");
+                    fileType = "video";
+                    break;
+                }
+                default:
+                {
+                    if (totalSize > maxSizeMb * 1024L * 1024L)
+                        throw new InvalidOperationException($"File {fileName} size exceed maximum size of {maxSizeMb}MB");
+                    fileType = "others";
+                    break;
+                }
+            }
+
+            var totalChunk = (int)Math.Ceiling((double)totalSize / chunkSize);
+            var clientId = baseClientId + srcIdx;
+
+            // Build chunk contents (for building multipart form data)
+            var chunks = new object[totalChunk];
+            for (int i = 0; i < totalChunk; i++)
+            {
+                var start = i * chunkSize;
+                var length = (int)Math.Min(chunkSize, totalSize - start);
+                var chunkData = new byte[length];
+                Array.Copy(fileBuffer, start, chunkData, 0, length);
+                chunks[i] = chunkData;
+            }
+
+            attachmentsData.Add((filePath, fileBuffer, fileName, extFile, fileType, totalSize, width, height, totalChunk, clientId, chunks));
+        }
+
+        var results = new List<UploadAttachmentResult>();
+        var requests = new List<Task>();
+
+        foreach (var data in attachmentsData)
+        {
+            var urlType = data.fileType == "image" ? "photo_original/upload" : "asyncfile/upload";
+
+            for (int chunkIdx = 0; chunkIdx < data.totalChunk; chunkIdx++)
+            {
+                var chunkId = chunkIdx + 1;
+                var paramsObj = new Dictionary<string, object?>
+                {
+                    [isGroupMessage ? "grid" : "toid"] = threadId,
+                    ["totalChunk"] = data.totalChunk,
+                    ["fileName"] = data.fileName,
+                    ["clientId"] = data.clientId,
+                    ["totalSize"] = data.totalSize,
+                    ["imei"] = GetImei(),
+                    ["isE2EE"] = 0,
+                    ["jxl"] = 0,
+                    ["chunkId"] = chunkId
+                };
+
+                var encryptedParams = EncodeAes(JsonSerializer.Serialize(paramsObj, _jsonOptions));
+                if (encryptedParams == null)
+                    throw new InvalidOperationException("Failed to encrypt message");
+
+                var uploadUrl = $"{urlPrefix}{urlType}";
+                uploadUrl = ZaloUtils.MakeUrl(uploadUrl, new Dictionary<string, string> { ["type"] = typeParam, ["params"] = encryptedParams });
+
+                var chunkContent = data.chunkContents[chunkIdx] as byte[] ?? Array.Empty<byte>();
+                var content = new MultipartFormDataContent();
+                content.Add(new ByteArrayContent(chunkContent), "chunkContent", data.fileName);
+
+                var chunkIdxCapture = chunkIdx;
+                var dataCapture = data;
+
+                requests.Add(ProcessChunkResponse(uploadUrl, content, dataCapture, chunkIdxCapture, results, data.totalChunk));
+            }
+        }
+
+        await Task.WhenAll(requests);
+
+        return results;
+    }
+
+    private async Task ProcessChunkResponse(
+        string uploadUrl,
+        MultipartFormDataContent content,
+        (string filePath, byte[] fileBuffer, string fileName, string extFile, string fileType, long totalSize, int width, int height, int totalChunk, long clientId, object[] chunkContents) data,
+        int chunkIndex,
+        List<UploadAttachmentResult> results,
+        int totalChunks)
+    {
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
+            request.Headers.Add("User-Agent", _context.UserAgent);
+            if (!string.IsNullOrEmpty(_context.Imei))
+                request.Headers.Add("x-zalo-imei", _context.Imei);
+            request.Content = content;
+
+            var response = await _httpClient.SendAsync(request);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            using var doc = JsonDocument.Parse(responseString);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("error_code", out var ecEl) || ecEl.GetInt32() != 0)
+                return; // error — skip
+
+            if (!root.TryGetProperty("data", out var dataEl))
+                return;
+
+            var rawData = dataEl.GetString();
+            if (string.IsNullOrEmpty(rawData))
+                return;
+
+            var decrypted = AesHelper.DecryptAesCbc(_context.SecretKey, rawData);
+            if (decrypted == null)
+                return;
+
+            using var innerDoc = JsonDocument.Parse(decrypted);
+            var innerRoot = innerDoc.RootElement;
+
+            if (innerRoot.TryGetProperty("error_code", out var iEc) && iEc.GetInt32() != 0)
+                return;
+
+            var innerData = innerRoot.TryGetProperty("data", out var dd) ? dd : innerRoot;
+
+            // Only process response for the FIRST chunk (chunkIndex == 0) or handle per-chunk responses
+            if (chunkIndex == 0)
+            {
+                if (data.fileType == "image")
+                {
+                    var result = new UploadAttachmentResult
+                    {
+                        FileType = "image",
+                        PhotoId = TryGetString(innerData, "photoId"),
+                        NormalUrl = TryGetString(innerData, "normalUrl"),
+                        HdUrl = TryGetString(innerData, "hdUrl"),
+                        ThumbUrl = TryGetString(innerData, "thumbUrl"),
+                        Width = TryGetInt(innerData, "width", data.width),
+                        Height = TryGetInt(innerData, "height", data.height),
+                        TotalSize = TryGetLong(innerData, "totalSize", data.totalSize),
+                        HdSize = TryGetLong(innerData, "totalSize", data.totalSize),
+                        Finished = TryGetInt(innerData, "finished", 1),
+                        ClientFileId = TryGetLong(innerData, "clientFileId", data.clientId),
+                        ChunkId = TryGetInt(innerData, "chunkId", 1),
+                    };
+
+                    lock (results)
+                    {
+                        results.Add(result);
+                    }
+                }
+                else
+                {
+                    // For video/others — wait for WebSocket callback
+                    var fileId = TryGetString(innerData, "fileId");
+                    if (!string.IsNullOrEmpty(fileId))
+                    {
+                        var tcs = new TaskCompletionSource<UploadAttachmentResult>();
+                        var fileType = data.fileType;
+                        var fileName = data.fileName;
+                        var totalSize = data.totalSize;
+
+                        UploadCallback callback = null!;
+                        callback = (wsData) =>
+                        {
+                            lock (results)
+                            {
+                                var result = new UploadAttachmentResult
+                                {
+                                    FileType = fileType,
+                                    FileId = fileId,
+                                    FileUrl = TryGetString(wsData, "url") ?? TryGetString(wsData, "fileUrl"),
+                                    Checksum = ZaloUtils.GetMd5LargeFile(data.fileBuffer),
+                                    FileName = fileName,
+                                    TotalSize = totalSize,
+                                    ChunkId = TryGetInt(wsData, "chunkId", chunkIndex + 1),
+                                    Finished = 1,
+                                    ClientFileId = data.clientId,
+                                };
+                                results.Add(result);
+                            }
+                            tcs.TrySetResult(null!);
+                        };
+
+                        _context.UploadCallbacks[fileId] = callback;
+
+                        // Timeout after 30 seconds if WebSocket never confirms
+                        _ = Task.Delay(30000).ContinueWith(_ =>
+                        {
+                            if (_context.UploadCallbacks.Remove(fileId))
+                            {
+                                lock (results)
+                                {
+                                    var fallbackResult = new UploadAttachmentResult
+                                    {
+                                        FileType = fileType,
+                                        FileId = fileId,
+                                        FileName = fileName,
+                                        TotalSize = totalSize,
+                                        Finished = 0,
+                                        ClientFileId = data.clientId,
+                                    };
+                                    results.Add(fallbackResult);
+                                }
+                                tcs.TrySetResult(null!);
+                            }
+                        });
+
+                        await tcs.Task;
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Silently fail individual chunk uploads
+        }
+    }
+
+    private string? EncodeAes(string json)
+    {
+        return AesHelper.EncryptAesCbc(_context.SecretKey, json);
+    }
+
+    private string GetFileServiceUrl()
+    {
+        if (_context.ZpwServiceMapV3.TryGetValue("file", out var urls) && urls.Length > 0)
+            return urls[0].TrimEnd('/');
+        return "https://files.chat.zalo.me";
+    }
+
+    private int GetShareFileSetting(string key, int defaultVal)
+    {
+        if (_context.Settings.TryGetValue("sharefile", out var obj) && obj is Dictionary<string, object> sf)
+        {
+            if (sf.TryGetValue(key, out var val))
+            {
+                try { return Convert.ToInt32(val); } catch { }
+            }
+        }
+        return defaultVal;
+    }
+
+    private static int TryGetInt(JsonElement el, string key, int defaultVal = 0)
+    {
+        return el.TryGetProperty(key, out var v) ? v.GetInt32() : defaultVal;
+    }
+
+    private static long TryGetLong(JsonElement el, string key, long defaultVal = 0)
+    {
+        return el.TryGetProperty(key, out var v) ? v.GetInt64() : defaultVal;
+    }
+
+    private List<string> GetRestrictedExtensions()
+    {
+        if (_context.Settings.TryGetValue("sharefile", out var obj) && obj is Dictionary<string, object> sf)
+        {
+            if (sf.TryGetValue("restricted_ext_file", out var val) && val is List<object> extList)
+                return extList.Select(e => e?.ToString()?.ToLowerInvariant() ?? "").ToList();
+        }
+        return new List<string> { "exe", "bat", "cmd", "msi", "dll", "scr", "pif", "vbs", "js", "jar" };
+    }
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
 
     // ─── Group APIs ──────────────────────────────────────────────────────
     public Task<ZaloApiResponse<JsonElement>> CreateGroupAsync(string name, List<long> memberIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createGroup", new { name, memberIds });

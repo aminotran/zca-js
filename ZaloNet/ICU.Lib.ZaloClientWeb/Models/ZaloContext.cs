@@ -41,6 +41,12 @@ public class ZaloContext
     /// <summary>Client configuration options.</summary>
     public ZaloOptions Options { get; set; }
 
+    /// <summary>
+    /// Upload callbacks dictionary — keyed by fileId, invoked when WebSocket confirms upload complete.
+    /// Equivalent to uploadCallbacks Map in zca-js context.ts.
+    /// </summary>
+    public Dictionary<string, UploadCallback> UploadCallbacks { get; set; } = new();
+
     /// <summary>The API version number used for "zpw_ver" parameter in request URLs.
     /// Default: 671. Higher values may enable newer features.</summary>
     public int ApiVersion => Options.ApiVersion;
