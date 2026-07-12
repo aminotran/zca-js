@@ -261,10 +261,10 @@ public class ZaloApi
     public Task<ZaloApiResponse<JsonElement>> GetUnreadMarkAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getUnreadMark");
     public Task<ZaloApiResponse<JsonElement>> GetAutoDeleteChatAsync(string threadId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAutoDeleteChat", new { threadId });
     public Task<ZaloApiResponse<JsonElement>> UpdateAutoDeleteChatAsync(string threadId, int duration) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateAutoDeleteChat", new { threadId, duration });
-    public Task<ZaloApiResponse<JsonElement>> GetStickersAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getStickers");
-    public Task<ZaloApiResponse<JsonElement>> GetStickersDetailAsync(int stickerId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getStickersDetail", new { stickerId });
-    public Task<ZaloApiResponse<JsonElement>> GetStickerCategoryDetailAsync(int categoryId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getStickerCategoryDetail", new { categoryId });
-    public Task<ZaloApiResponse<JsonElement>> SearchStickerAsync(string keyword) => ApiMethods.CallGetApiAsync(_context, _httpClient, "searchSticker", new { keyword });
+    public Task<ZaloApiResponse<JsonElement>> GetStickersAsync(string keyword) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getStickers", new { keyword, gif = 1, guggy = 0, imei = _context.Imei });
+    public Task<ZaloApiResponse<JsonElement>> GetStickersDetailAsync(int stickerId) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getStickersDetail", new { sid = stickerId });
+    public Task<ZaloApiResponse<JsonElement>> GetStickerCategoryDetailAsync(int categoryId) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getStickerCategoryDetail", new { cid = categoryId });
+    public Task<ZaloApiResponse<JsonElement>> SearchStickerAsync(string keyword) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "searchSticker", new { keyword, limit = 50, srcType = 0, imei = _context.Imei });
     public Task<ZaloApiResponse<JsonElement>> CreatePollAsync(string groupId, string question, List<string> options) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createPoll", new { groupId, question, options });
     public Task<ZaloApiResponse<JsonElement>> GetPollDetailAsync(string pollId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getPollDetail", new { pollId });
     public Task<ZaloApiResponse<JsonElement>> AddPollOptionsAsync(string pollId, List<string> options) => ApiMethods.CallPostApiAsync(_context, _httpClient, "addPollOptions", new { pollId, options });
