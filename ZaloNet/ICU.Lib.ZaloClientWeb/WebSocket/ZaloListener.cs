@@ -146,6 +146,9 @@ public class ZaloListener : IDisposable
         _webSocket.Options.SetRequestHeader("origin", "https://chat.zalo.me");
         _webSocket.Options.SetRequestHeader("user-agent", _context.UserAgent);
 
+        // Set cookies via CookieContainer (SetRequestHeader for "cookie" is blocked by .NET)
+        _webSocket.Options.Cookies = _context.CookieContainer;
+
         var wsUrl = BuildWebSocketUrl();
 
         try
@@ -673,10 +676,37 @@ public class ZaloListener : IDisposable
         });
     }
 
+    /// <summary>
+    /// Builds Cookie header string from the cookie container.
+    /// Equivalent to: ctx.cookie.getCookieStringSync("https://chat.zalo.me") in zca-js
+    /// </summary>
+    private string GetCookieString()
+    {
+        try
+        {
+            var uri = new Uri("https://chat.zalo.me");
+            var cookies = _context.CookieContainer.GetCookies(uri);
+            var sb = new StringBuilder();
+            foreach (System.Net.Cookie cookie in cookies)
+            {
+                if (sb.Length > 0) sb.Append("; ");
+                sb.Append($"{cookie.Name}={cookie.Value}");
+            }
+            return sb.ToString();
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
     private string BuildWebSocketUrl()
     {
         var urls = _context.ZpwWsUrls ?? Array.Empty<string>();
         var url = urls.Length > 0 ? urls[_currentUrlIndex % urls.Length] : "wss://wpa.chat.zalo.me:443";
+        // ZpwWsUrls returns https:// URLs, but WebSocket requires wss://
+        if (url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            url = "wss://" + url.Substring(8);
         return ZaloUtils.MakeUrl(url, new Dictionary<string, string> { ["t"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() });
     }
 

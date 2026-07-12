@@ -68,10 +68,19 @@ public class LoginHelper
         ctx.ExtraVer = serverInfo.ExtraVer;
         ctx.LoginInfo = loginData;
         ctx.ZpwServiceMapV3 = loginData.ZpwServiceMapV3;
+        // ctx.ZpwWsUrls is populated from the parsed login response which has zpw_ws as string[]
+        // But LoginInfo.ZpwWs is string? (single URL). We need the array from the raw response.
+        // The raw LoginResponse has ZpwWs as string[] - we populate ZpwWsUrls from there
         ctx.ZpwWs = loginData.ZpwWs;
-        ctx.ZpwWsUrls = loginData.ZpwServiceMapV3.ContainsKey("chat")
-            ? loginData.ZpwServiceMapV3["chat"]
-            : Array.Empty<string>();
+        // ZpwWsUrls should be the zpw_ws array from the login response
+        if (loginData.ZpwWsUrls != null && loginData.ZpwWsUrls.Length > 0)
+            ctx.ZpwWsUrls = loginData.ZpwWsUrls;
+        else if (loginData.ZpwWs != null && !string.IsNullOrEmpty(loginData.ZpwWs))
+            ctx.ZpwWsUrls = new[] { loginData.ZpwWs };
+        else if (loginData.ZpwServiceMapV3.ContainsKey("chat"))
+            ctx.ZpwWsUrls = loginData.ZpwServiceMapV3["chat"];
+        else
+            ctx.ZpwWsUrls = Array.Empty<string>();
 
         if (string.IsNullOrEmpty(ctx.SecretKey))
             throw new ZaloApiException("Context initialization failed - no secret key (zpw_enk)");
@@ -197,6 +206,7 @@ public class LoginHelper
                 Uid = long.TryParse(loginInfo.Uid, out var uid) ? uid : 0,
                 ZpwEnk = loginInfo.ZpwEnk,
                 ZpwWs = loginInfo.ZpwWs?.Length > 0 ? loginInfo.ZpwWs[0] : null,
+                ZpwWsUrls = loginInfo.ZpwWs?.Length > 0 ? loginInfo.ZpwWs : null,
                 ZpwServiceMapV3 = loginInfo.ZpwServiceMapV3 ?? new Dictionary<string, string[]>(),
                 Send2MeId = loginInfo.Send2MeId,
                 Language = loginInfo.Language,

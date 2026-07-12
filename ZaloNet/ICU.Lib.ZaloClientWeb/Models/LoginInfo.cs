@@ -16,8 +16,12 @@ public class LoginInfo
     /// This is the "secretKey" that enables AES-CBC decryption.</summary>
     public string? ZpwEnk { get; set; }
 
-    /// <summary>WebSocket URL list (zpw_ws) for real-time connections.</summary>
+    /// <summary>WebSocket URL list (zpw_ws) for real-time connections.
+    /// This is the full array from the login response.</summary>
     public string? ZpwWs { get; set; }
+
+    /// <summary>Full WebSocket URL array from zpw_ws login response field.</summary>
+    public string[]? ZpwWsUrls { get; set; }
 
     /// <summary>Service map (zpw_service_map_v3) mapping service names to endpoint URLs.
     /// Contains: chat, group, friend, sticker, reaction, file, profile, etc.</summary>
