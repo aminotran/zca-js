@@ -11,11 +11,11 @@ public static class FriendDemo
         var friends = await api.GetAllFriendsAsync();
         Console.WriteLine(friends.IsSuccess ? $"Friends data: {friends.Data}" : $"Error: {friends.Error}");
 
-        var requests = await api.GetFriendRequestStatusAsync();
-        Console.WriteLine(requests.IsSuccess ? $"Requests: {requests.Data}" : $"Error: {requests.Error}");
+        // getFriendRequestStatus requires a friend userId, skip in this demo
+        Console.WriteLine("  (Skipping getFriendRequestStatus - requires friend ID)");
 
-        var closeFriends = await api.GetCloseFriendsAsync();
-        Console.WriteLine(closeFriends.IsSuccess ? $"Close friends: {closeFriends.Data}" : $"Error: {closeFriends.Error}");
+        // getCloseFriends endpoint is deprecated (returns 404), skipping
+        Console.WriteLine("  (Skipping getCloseFriends - deprecated endpoint)");
 
         Console.WriteLine("Press Enter to continue...");
         Console.ReadLine();

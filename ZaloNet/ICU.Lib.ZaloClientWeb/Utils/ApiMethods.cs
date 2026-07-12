@@ -256,8 +256,8 @@ public static class ApiMethods
         ["addReaction"] = "/api/reaction/add",
 
         // Sticker service
-        ["getStickers"] = "/api/message/sticker/list",
-        ["getStickersDetail"] = "/api/message/sticker/detail",
+        ["getStickers"] = "/api/message/sticker/suggest/stickers",
+        ["getStickersDetail"] = "/api/message/sticker/sticker_detail",
         ["getStickerCategoryDetail"] = "/api/message/sticker/category/sticker_detail",
         ["searchSticker"] = "/api/message/sticker/search",
 
@@ -354,10 +354,42 @@ public static class ApiMethods
         return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Get, endpoint);
     }
 
+    /// <summary>
+    /// Makes a GET API request with AES-encrypted params as query parameter.
+    /// Matches TypeScript pattern: utils.request(utils.makeURL(serviceURL, { params: encryptedParams }), { method: "GET" })
+    /// </summary>
+    public static async Task<ZaloApiResponse<JsonElement>> CallEncryptedGetApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? parameters = null)
+    {
+        var baseUrl = BuildApiUrl(ctx, endpoint);
+        // Serialize params to JSON and encrypt with AES
+        string encryptedParams;
+        if (parameters != null)
+        {
+            var json = JsonSerializer.Serialize(parameters, _jsonOptions);
+            encryptedParams = AesHelper.EncryptAesCbc(ctx.SecretKey, json) ?? json;
+        }
+        else
+        {
+            encryptedParams = AesHelper.EncryptAesCbc(ctx.SecretKey, "{}") ?? "{}";
+        }
+        var url = ZaloUtils.MakeUrl(baseUrl, new Dictionary<string, string> { ["params"] = encryptedParams }, ctx.ApiVersion, ctx.ApiType);
+        return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Get, endpoint);
+    }
+
     public static async Task<ZaloApiResponse<JsonElement>> CallPostApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? data = null)
     {
         var url = BuildApiUrl(ctx, endpoint);
         return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Post, endpoint, data);
+    }
+
+    /// <summary>
+    /// Makes a POST API request with AES-encrypted params sent as form field "params".
+    /// Matches TypeScript pattern: utils.request(serviceURL, { method: "POST", body: new URLSearchParams({ params: encryptedParams }) })
+    /// </summary>
+    public static async Task<ZaloApiResponse<JsonElement>> CallEncryptedPostApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? data = null)
+    {
+        var url = BuildApiUrl(ctx, endpoint);
+        return await SendApiEncryptedRequestAsync(ctx, httpClient, url, HttpMethod.Post, endpoint, data);
     }
 
     public static async Task<ZaloApiResponse<JsonElement>> CallCustomApiAsync(ZaloContext ctx, HttpClient httpClient, string method, string endpoint, object? data = null, bool isGet = true)
@@ -379,6 +411,93 @@ public static class ApiMethods
             return ZaloUtils.MakeUrl($"{urls[0].TrimEnd('/')}{path}", null, ctx.ApiVersion, ctx.ApiType);
         }
         return BuildApiUrl(ctx, groupEndpoint);
+    }
+
+    /// <summary>
+    /// Sends a POST request with AES-encrypted params as form field "params".
+    /// Matches TS: utils.request(url, { method: "POST", body: new URLSearchParams({ params: encryptedParams }) })
+    /// </summary>
+    private static async Task<ZaloApiResponse<JsonElement>> SendApiEncryptedRequestAsync(ZaloContext ctx, HttpClient httpClient, string url, HttpMethod method, string? endpoint = null, object? data = null)
+    {
+        try
+        {
+            var request = new HttpRequestMessage(method, url);
+            request.Headers.Add("User-Agent", ctx.UserAgent);
+            if (!string.IsNullOrEmpty(ctx.Imei))
+                request.Headers.Add("x-zalo-imei", ctx.Imei);
+
+            var cookieHeader = GetCookieHeaderForUrl(ctx.CookieContainer, url);
+            if (!string.IsNullOrEmpty(cookieHeader))
+                request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+
+            if (data != null)
+            {
+                var json = JsonSerializer.Serialize(data, _jsonOptions);
+                var encrypted = !string.IsNullOrEmpty(ctx.SecretKey)
+                    ? AesHelper.EncryptAesCbc(ctx.SecretKey, json) ?? json
+                    : json;
+                request.Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["params"] = encrypted });
+            }
+
+            var response = await httpClient.SendAsync(request);
+            var responseString = await response.Content.ReadAsStringAsync();
+
+            if (ctx.Options.Logging && endpoint != null)
+            {
+                var preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;
+                ctx.Options.ApiLogCallback?.Invoke($"[API] {method} {url} → HTTP {(int)response.StatusCode} | {preview}");
+            }
+
+            if (!response.IsSuccessStatusCode)
+                return new ZaloApiResponse<JsonElement> { Error = $"HTTP {(int)response.StatusCode}: {method} {url}" };
+
+            using var doc = JsonDocument.Parse(responseString);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("error_code", out var ecEl) || ecEl.GetInt32() != 0)
+            {
+                var errMsg = root.TryGetProperty("error_message", out var emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
+                var errCode = root.TryGetProperty("error_code", out var ecEl2) ? ecEl2.GetInt32() : -1;
+                return new ZaloApiResponse<JsonElement> { Error = errMsg, ErrorCode = errCode };
+            }
+
+            if (!root.TryGetProperty("data", out var dataEl))
+                return new ZaloApiResponse<JsonElement> { Error = "No data" };
+
+            var rawData = dataEl.GetString();
+            if (string.IsNullOrEmpty(rawData))
+            {
+                using var e = JsonDocument.Parse("{}");
+                return new ZaloApiResponse<JsonElement> { Data = e.RootElement.Clone() };
+            }
+
+            string decrypted;
+            if (!string.IsNullOrEmpty(ctx.SecretKey))
+            {
+                decrypted = AesHelper.DecryptAesCbc(ctx.SecretKey, rawData);
+                if (decrypted == null) return new ZaloApiResponse<JsonElement> { Error = "Failed to decrypt" };
+            }
+            else decrypted = rawData;
+
+            using var innerDoc = JsonDocument.Parse(decrypted);
+            var innerRoot = innerDoc.RootElement;
+
+            if (innerRoot.TryGetProperty("error_code", out var iEc) && iEc.GetInt32() != 0)
+            {
+                var iMsg = innerRoot.TryGetProperty("error_message", out var iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
+                return new ZaloApiResponse<JsonElement> { Error = iMsg, ErrorCode = iEc.GetInt32() };
+            }
+
+            var respData = innerRoot.TryGetProperty("data", out var iData) ? iData.Clone() : innerRoot.Clone();
+            return new ZaloApiResponse<JsonElement> { Data = respData };
+        }
+        catch (Exception ex)
+        {
+            var msg = ex.Message;
+            if (ctx.Options.ApiLogCallback != null)
+                ctx.Options.ApiLogCallback($"[API-ERROR] {method} {endpoint ?? url}: {msg}");
+            return new ZaloApiResponse<JsonElement> { Error = $"Request failed: {msg}" };
+        }
     }
 
     private static async Task<ZaloApiResponse<JsonElement>> SendApiRequestAsync(ZaloContext ctx, HttpClient httpClient, string url, HttpMethod method, string? endpoint = null, object? data = null)
