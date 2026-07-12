@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
 using ICU.Lib.ZaloClientWeb.Auth;
@@ -306,7 +307,7 @@ public class ZaloApi
                 ["ext"] = new Dictionary<string, object?> { ["sSrcType"] = -1, ["sSrcStr"] = "", ["msg_warning_type"] = 0 }
             },
             ["title"] = msg ?? ""
-        });
+        }, _jsonOptions);
 
         if (threadType == ThreadType.Group)
             return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVideoGroup",
@@ -324,7 +325,7 @@ public class ZaloApi
             ["voiceUrl"] = voiceUrl,
             ["duration"] = duration,
             ["title"] = msg ?? ""
-        });
+        }, _jsonOptions);
 
         if (threadType == ThreadType.Group)
             return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVoiceGroup",
@@ -349,7 +350,7 @@ public class ZaloApi
         {
             ["contactUid"] = userId.ToString(),
             ["qrCodeUrl"] = qrCodeUrl,
-        });
+        }, _jsonOptions);
         if (threadType == ThreadType.Group)
             return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendCardGroup",
                 new { ttl = 0, msgType = 6, clientId, msgInfo, visibility = 0, grid = threadId });
@@ -908,7 +909,8 @@ public class ZaloApi
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
+        WriteIndented = false,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     // ─── Group APIs ──────────────────────────────────────────────────────
@@ -966,8 +968,8 @@ public class ZaloApi
                     var displayName = friend.TryGetProperty("displayName", out var dnEl) ? dnEl.GetString()
                         : friend.TryGetProperty("name", out var nEl) ? nEl.GetString() : userId;
 
-                    convList.Add(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["id"] = userId, ["type"] = 0, ["name"] = displayName ?? userId, ["lastMsg"] = "", ["lastTime"] = 0L }));
-                    profiles[userId!] = JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["displayName"] = displayName ?? userId });
+                    convList.Add(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["id"] = userId, ["type"] = 0, ["name"] = displayName ?? userId, ["lastMsg"] = "", ["lastTime"] = 0L }, _jsonOptions));
+                    profiles[userId!] = JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["displayName"] = displayName ?? userId }, _jsonOptions);
                 }
             }
 
@@ -981,7 +983,7 @@ public class ZaloApi
                     {
                         var gid = grp.Name;
                         if (string.IsNullOrEmpty(gid)) continue;
-                        convList.Add(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["id"] = gid, ["type"] = 1, ["name"] = $"Group {gid}", ["lastMsg"] = "", ["lastTime"] = 0L, ["memberCount"] = 0 }));
+                        convList.Add(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["id"] = gid, ["type"] = 1, ["name"] = $"Group {gid}", ["lastMsg"] = "", ["lastTime"] = 0L, ["memberCount"] = 0 }, _jsonOptions));
                     }
                 }
                 else if (gData.TryGetProperty("data", out var gList) && gList.ValueKind == JsonValueKind.Array)
@@ -990,7 +992,7 @@ public class ZaloApi
                     {
                         var gid = grp.TryGetProperty("groupId", out var gidEl) ? gidEl.GetString() : null;
                         if (string.IsNullOrEmpty(gid)) continue;
-                        convList.Add(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["id"] = gid, ["type"] = 1, ["name"] = $"Group {gid}", ["lastMsg"] = "", ["lastTime"] = 0L, ["memberCount"] = 0 }));
+                        convList.Add(JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["id"] = gid, ["type"] = 1, ["name"] = $"Group {gid}", ["lastMsg"] = "", ["lastTime"] = 0L, ["memberCount"] = 0 }, _jsonOptions));
                     }
                 }
             }
@@ -1000,7 +1002,7 @@ public class ZaloApi
                 ["data"] = new Dictionary<string, object?> { ["conversations"] = convList, ["profiles"] = profiles, ["groupInfo"] = groupInfoDict }
             };
 
-            var result = new ZaloApiResponse<JsonElement> { Data = JsonSerializer.SerializeToElement(resultDict), Error = null };
+            var result = new ZaloApiResponse<JsonElement> { Data = JsonSerializer.SerializeToElement(resultDict, _jsonOptions), Error = null };
             _conversationCache = result;
             _conversationCacheTime = DateTime.UtcNow;
             return result;

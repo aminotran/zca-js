@@ -18,6 +18,7 @@ public class Program
     {
         // Support Vietnamese UTF-8 characters in console
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.InputEncoding = System.Text.Encoding.UTF8;
 
         // Quick test mode for SendLink
         if (args.Length > 0 && args[0] == "testlink")
