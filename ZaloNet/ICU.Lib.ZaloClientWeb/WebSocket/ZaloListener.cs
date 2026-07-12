@@ -197,32 +197,45 @@ public class ZaloListener : IDisposable
             var payloadData = Encoding.UTF8.GetString(rawData, 4, rawData.Length - 4);
             if (string.IsNullOrEmpty(payloadData)) return;
 
-            // Use JsonDocument to control lifetime explicitly
-            JsonDocument? doc = null;
+            // Parse with explicit lifetime management
             JsonElement parsed;
-            try
+            using (var doc = JsonDocument.Parse(payloadData))
             {
-                doc = JsonDocument.Parse(payloadData);
-                parsed = doc.RootElement.Clone(); // Clone to detach from the document
-            }
-            finally
-            {
-                doc?.Dispose();
+                parsed = doc.RootElement.Clone();
             }
 
-            _logger.Verbose($"WS event: version={version} cmd={cmd} subCmd={subCmd}");
-
-            // Log some event types for debugging
-            if (cmd >= 501 && cmd <= 612)
+            // Log unknown cmds
+            string cmdName;
+            switch (cmd)
             {
-                _logger.Verbose($"  Processing cmd={cmd}");
+                case 1: cmdName = "CipherKeyExchange"; break;
+                case 2: cmdName = "Ping"; break;
+                case 501: cmdName = "UserMsgs"; break;
+                case 502: cmdName = "UserSeenDelivered"; break;
+                case 510: cmdName = "OldUserMsgs"; break;
+                case 511: cmdName = "OldGroupMsgs"; break;
+                case 521: cmdName = "GroupMsgs"; break;
+                case 522: cmdName = "GroupSeenDelivered"; break;
+                case 601: cmdName = "Controls"; break;
+                case 602: cmdName = "Typing"; break;
+                case 610: cmdName = "OldUserReactions"; break;
+                case 611: cmdName = "OldGroupReactions"; break;
+                case 612: cmdName = "Reactions"; break;
+                case 3000: cmdName = "DuplicateConnection"; break;
+                case 621: cmdName = "Unknown:ChatText"; break;
+                default: cmdName = $"Unknown:{cmd}"; break;
             }
 
-            // Cipher key exchange (cmd=1, subCmd=1)
+            if (cmd > 1 && cmd != 2)
+            {
+                _logger.Verbose($"WS: [{cmdName}] v={version} cmd={cmd} sub={subCmd}");
+            }
+
+            // Cipher key exchange (cmd=1)
             if (version == 1 && cmd == 1 && subCmd == 1 && parsed.TryGetProperty("key", out var keyEl))
             {
                 _cipherKey = keyEl.GetString();
-                _logger.Verbose("Received cipher key");
+                _logger.Info($"🔑 Cipher key received, ping loop started");
                 CipherKeyReceived?.Invoke(this, _cipherKey);
                 StartPingLoop();
                 return;
@@ -231,7 +244,6 @@ public class ZaloListener : IDisposable
             // ===== User messages (cmd=501) =====
             if (version == 1 && cmd == 501 && subCmd == 0)
             {
-                _logger.Verbose("  Handling user messages (cmd=501)...");
                 var decodedNullable = await DecodeEventPayloadAsync(parsed);
                 if (decodedNullable == null) return;
                 var decoded = decodedNullable.Value.Clone();
@@ -245,7 +257,10 @@ public class ZaloListener : IDisposable
                     {
                         var undo = new UndoEvent(_context.Uid.ToString(), msgEl, false);
                         if (!undo.IsSelf || _context.Options.SelfListen)
+                        {
+                            _logger.Info($"↩ [UNDO] msgId={undo.MsgId}");
                             UndoReceived?.Invoke(this, new ZaloUndoEventArgs { Undo = undo });
+                        }
                         continue;
                     }
 
@@ -254,6 +269,9 @@ public class ZaloListener : IDisposable
                     {
                         var msg = new UserMessageInfo(_context.Uid.ToString(), msgData);
                         if (msg.IsSelf && !_context.Options.SelfListen) continue;
+                        var preview = msg.Data?.Content?.GetString() ?? msg.Data?.Notify ?? "(no text/other)";
+                        if (preview.Length > 50) preview = preview[..50] + "...";
+                        _logger.Info($"📨 [USER] from={msg.Data?.UidFrom} type={msg.Data?.MsgType} content=\"{preview}\"");
                         MessageReceived?.Invoke(this, new ZaloMessageEventArgs
                         {
                             Type = "user_message",
@@ -263,14 +281,12 @@ public class ZaloListener : IDisposable
                         });
                     }
                 }
-                _logger.Verbose("  User messages processed OK");
                 return;
             }
 
             // ===== Group messages (cmd=521) =====
             if (version == 1 && cmd == 521 && subCmd == 0)
             {
-                _logger.Verbose("  Handling group messages (cmd=521)...");
                 var decodedNullable = await DecodeEventPayloadAsync(parsed);
                 if (decodedNullable == null) return;
                 var decoded = decodedNullable.Value.Clone();
@@ -284,7 +300,10 @@ public class ZaloListener : IDisposable
                     {
                         var undo = new UndoEvent(_context.Uid.ToString(), msgEl, true);
                         if (!undo.IsSelf || _context.Options.SelfListen)
+                        {
+                            _logger.Info($"↩ [UNDO] msgId={undo.MsgId}");
                             UndoReceived?.Invoke(this, new ZaloUndoEventArgs { Undo = undo });
+                        }
                         continue;
                     }
 
@@ -293,6 +312,9 @@ public class ZaloListener : IDisposable
                     {
                         var msg = new GroupMessageInfo(_context.Uid.ToString(), msgData);
                         if (msg.IsSelf && !_context.Options.SelfListen) continue;
+                        var preview = msg.Data?.Content?.GetString() ?? msg.Data?.Notify ?? "(no text/other)";
+                        if (preview.Length > 50) preview = preview[..50] + "...";
+                        _logger.Info($"👥 [GROUP] group={msg.ThreadId} from={msg.Data?.UidFrom} type={msg.Data?.MsgType} content=\"{preview}\"");
                         MessageReceived?.Invoke(this, new ZaloMessageEventArgs
                         {
                             Type = "group_message",
@@ -302,14 +324,12 @@ public class ZaloListener : IDisposable
                         });
                     }
                 }
-                _logger.Verbose("  Group messages processed OK");
                 return;
             }
 
             // ===== Control events (cmd=601) =====
             if (version == 1 && cmd == 601 && subCmd == 0)
             {
-                _logger.Verbose("  Handling control events (cmd=601)...");
                 var decodedNullable = await DecodeEventPayloadAsync(parsed);
                 if (decodedNullable == null) return;
                 var decoded = decodedNullable.Value.Clone();
@@ -325,17 +345,15 @@ public class ZaloListener : IDisposable
                     {
                         var actStr = actType.GetString();
 
-                        // Upload file done
                         if (actStr == "file_done")
                         {
                             var fileUrl = ctrlContent.TryGetProperty("data", out var fileData)
                                 && fileData.TryGetProperty("url", out var urlEl) ? urlEl.GetString() : null;
                             var fileId = ctrlContent.TryGetProperty("fileId", out var fidEl) ? fidEl.GetString() : null;
-                            _logger.Verbose($"  File upload done: id={fileId}");
+                            _logger.Info($"📎 [FILE UPLOAD] id={fileId}");
                             continue;
                         }
 
-                        // Group events
                         if (actStr == "group")
                         {
                             if (ctrlContent.TryGetProperty("act", out var groupAct))
@@ -355,13 +373,12 @@ public class ZaloListener : IDisposable
                                     groupAct.GetString() ?? ""
                                 );
                                 if (groupEvent.IsSelf && !_context.Options.SelfListen) continue;
-                                _logger.Verbose($"  Group event: {groupAct.GetString()}");
+                                _logger.Info($"📋 [GROUP EVENT] {groupAct.GetString()}");
                                 GroupEventReceived?.Invoke(this, groupEvent);
                             }
                             continue;
                         }
 
-                        // Friend events
                         if (actStr == "fr")
                         {
                             if (!ctrlContent.TryGetProperty("act", out var frAct)) continue;
@@ -385,12 +402,11 @@ public class ZaloListener : IDisposable
                                 (FriendEventType)ZaloUtils.GetFriendEventType(frAct.GetString() ?? "")
                             );
                             if (friendEvent.IsSelf && !_context.Options.SelfListen) continue;
-                            _logger.Verbose($"  Friend event: {frAct.GetString()}");
+                            _logger.Info($"🤝 [FRIEND EVENT] {frAct.GetString()}");
                             FriendEventReceived?.Invoke(this, friendEvent);
                         }
                     }
                 }
-                _logger.Verbose("  Control events processed OK");
                 return;
             }
 
@@ -437,7 +453,7 @@ public class ZaloListener : IDisposable
 
                 if (reactionList.Count > 0)
                 {
-                    _logger.Verbose($"  Reactions: {reactionList.Count}");
+                    _logger.Info($"❤️ [REACTION] x{reactionList.Count}");
                     ReactionReceived?.Invoke(this, new ZaloReactionEventArgs { Type = "reaction", Reactions = reactionList });
                 }
                 return;
@@ -482,8 +498,10 @@ public class ZaloListener : IDisposable
                     {
                         var delivered = JsonSerializer.Deserialize<UserDeliveredMessage>(d.GetRawText());
                         if (delivered != null)
-                            DeliveredReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs
-                            { Type = "delivered", ThreadId = delivered.Uid });
+                        {
+                            _logger.Info($"✅ [DELIVERED] uid={delivered.Uid}");
+                            DeliveredReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs { Type = "delivered", ThreadId = delivered.Uid });
+                        }
                     }
                 }
                 if (decoded.TryGetProperty("seens", out var seenEl) && seenEl.ValueKind == JsonValueKind.Array)
@@ -492,8 +510,10 @@ public class ZaloListener : IDisposable
                     {
                         var seen = JsonSerializer.Deserialize<UserSeenMessage>(s.GetRawText());
                         if (seen != null)
-                            SeenReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs
-                            { Type = "seen", ThreadId = seen.Uid });
+                        {
+                            _logger.Info($"👁 [SEEN] uid={seen.Uid}");
+                            SeenReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs { Type = "seen", ThreadId = seen.Uid });
+                        }
                     }
                 }
                 return;
@@ -512,8 +532,10 @@ public class ZaloListener : IDisposable
                     {
                         var delivered = JsonSerializer.Deserialize<GroupDeliveredMessage>(d.GetRawText());
                         if (delivered != null)
-                            DeliveredReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs
-                            { Type = "delivered", ThreadId = delivered.GroupId });
+                        {
+                            _logger.Info($"✅ [DELIVERED] groupId={delivered.GroupId}");
+                            DeliveredReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs { Type = "delivered", ThreadId = delivered.GroupId });
+                        }
                     }
                 }
                 if (decoded.TryGetProperty("groupSeens", out var gSeenEl) && gSeenEl.ValueKind == JsonValueKind.Array)
@@ -522,8 +544,10 @@ public class ZaloListener : IDisposable
                     {
                         var seen = JsonSerializer.Deserialize<GroupSeenMessage>(s.GetRawText());
                         if (seen != null)
-                            SeenReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs
-                            { Type = "seen", ThreadId = seen.GroupId });
+                        {
+                            _logger.Info($"👁 [SEEN] groupId={seen.GroupId}");
+                            SeenReceived?.Invoke(this, new ZaloSeenDeliveredEventArgs { Type = "seen", ThreadId = seen.GroupId });
+                        }
                     }
                 }
                 return;
@@ -555,12 +579,14 @@ public class ZaloListener : IDisposable
                             args.IsGroup = true;
                             args.ThreadId = dataObj.TryGetProperty("gid", out var gid) ? gid.GetString() ?? "" : "";
                             args.Uid = dataObj.TryGetProperty("uid", out var uid) ? uid.GetString() ?? "" : "";
+                            _logger.Verbose($"⌨ [GTYPING] group={args.ThreadId} uid={args.Uid}");
                         }
                         else
                         {
                             args.IsGroup = false;
                             args.ThreadId = dataObj.TryGetProperty("uid", out var uid2) ? uid2.GetString() ?? "" : "";
                             args.Uid = dataObj.TryGetProperty("uid", out var uid3) ? uid3.GetString() ?? "" : "";
+                            _logger.Verbose($"⌨ [TYPING] uid={args.Uid}");
                         }
                         TypingReceived?.Invoke(this, args);
                     }
@@ -587,6 +613,7 @@ public class ZaloListener : IDisposable
                     if (msgData != null)
                     {
                         var msg = new UserMessageInfo(_context.Uid.ToString(), msgData);
+                        _logger.Verbose($"📜 [OLD USER MSG] from={msg.Data?.UidFrom}");
                         MessageReceived?.Invoke(this, new ZaloMessageEventArgs
                         { Type = "old_user_message", Message = msg, IsGroup = false, IsSelf = msg.IsSelf });
                     }
@@ -608,6 +635,7 @@ public class ZaloListener : IDisposable
                     if (msgData != null)
                     {
                         var msg = new GroupMessageInfo(_context.Uid.ToString(), msgData);
+                        _logger.Verbose($"📜 [OLD GROUP MSG] group={msg.ThreadId} from={msg.Data?.UidFrom}");
                         MessageReceived?.Invoke(this, new ZaloMessageEventArgs
                         { Type = "old_group_message", Message = msg, IsGroup = true, IsSelf = msg.IsSelf });
                     }
@@ -618,20 +646,16 @@ public class ZaloListener : IDisposable
             // Duplicate connection
             if (version == 1 && cmd == 3000 && subCmd == 0)
             {
-                _logger.Error("Another connection is opened, closing this one");
+                _logger.Error("⚠ Another connection is opened, closing this one");
                 await StopAsync();
             }
         }
         catch (Exception ex)
         {
-            _logger.Error("Failed to process WebSocket message:", ex.Message);
+            _logger.Error($"Failed to process WebSocket message: {ex.Message}");
         }
     }
 
-    /// <summary>
-    /// Decodes an encrypted event payload. Always clones the result to ensure the
-    /// JsonElement does not become invalid when its backing JsonDocument is finalized.
-    /// </summary>
     private async Task<JsonElement?> DecodeEventPayloadAsync(JsonElement parsed)
     {
         if (!parsed.TryGetProperty("data", out var dataStrEl) || dataStrEl.ValueKind != JsonValueKind.String)
@@ -643,8 +667,6 @@ public class ZaloListener : IDisposable
         var rawData = dataStrEl.GetString() ?? "";
 
         var decoded = await ZaloUtils.DecodeEventData<JsonElement>(rawData, encryptType, _cipherKey);
-        // Clone to ensure the JsonElement owns its own memory (detached from any internal JsonDocument)
-        // Check if the decoded value is not the default (empty) JsonElement
         if (decoded.ValueKind != JsonValueKind.Undefined)
             return decoded.Clone();
         return null;
@@ -662,6 +684,7 @@ public class ZaloListener : IDisposable
                     var pingData = new { version = 1, cmd = 2, subCmd = 1, data = new { eventId = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() } };
                     var json = JsonSerializer.Serialize(pingData);
                     await _webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(json)), WebSocketMessageType.Text, true, _cts.Token);
+                    _logger.Verbose("🏓 Ping sent");
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex) { _logger.Error("Ping failed:", ex.Message); break; }

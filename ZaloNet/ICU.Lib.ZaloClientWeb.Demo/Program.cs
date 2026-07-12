@@ -16,6 +16,9 @@ public class Program
 
     public static async Task Main(string[] args)
     {
+        // Support Vietnamese UTF-8 characters in console
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+
         Console.WriteLine("===========================================");
         Console.WriteLine("   ICU.Lib.ZaloClientWeb Demo Application");
         Console.WriteLine("   Unofficial Zalo API for .NET");
