@@ -14,6 +14,8 @@ public class ParamsEncryptor
     private readonly string _zcidExt;
     private string? _encryptKey;
     private const string FixedKey = "3FC4F0D2AB50057BCE0D90D9187A22B1";
+
+    /// <summary>Encryption version string (always "v2").</summary>
     public string EncVer { get; } = "v2";
 
     public ParamsEncryptor(int type, string imei, long firstLaunchTime)
@@ -23,6 +25,10 @@ public class ParamsEncryptor
         CreateEncryptKey(0);
     }
 
+    /// <summary>
+    /// Gets the derived encrypt key used for request data encryption.
+    /// Equivalent to getEncryptKey() in zca-js.
+    /// </summary>
     public string GetEncryptKey()
     {
         if (string.IsNullOrEmpty(_encryptKey))
@@ -30,6 +36,10 @@ public class ParamsEncryptor
         return _encryptKey;
     }
 
+    /// <summary>
+    /// Gets the encryption parameters (zcid, zcid_ext, enc_ver) for API requests.
+    /// Equivalent to getParams() in zca-js.
+    /// </summary>
     public Dictionary<string, string> GetParams()
     {
         if (string.IsNullOrEmpty(_zcid))
@@ -43,15 +53,25 @@ public class ParamsEncryptor
         };
     }
 
+    /// <summary>
+    /// Creates the zcid value by encrypting "{type},{imei},{firstLaunchTime}" with the fixed key.
+    /// In zca-js: the key is used as UTF-8 bytes, NOT hex-decoded! (cryptojs.enc.Utf8.parse(e)).
+    /// Output is uppercase hex.
+    /// </summary>
     private string? CreateZcid(int type, string imei, long firstLaunchTime)
     {
         if (type == 0 || string.IsNullOrEmpty(imei) || firstLaunchTime == 0)
             throw new ArgumentException("createZcid: missing params");
 
         var msg = $"{type},{imei},{firstLaunchTime}";
-        return AesHelper.EncryptAesCbcWithHexKey(FixedKey, msg, true);
+        return AesHelper.EncryptAesCbcWithUtf8Key(FixedKey, msg, "hex", true);
     }
 
+    /// <summary>
+    /// Creates the encrypt key from zcid and zcid_ext using MD5 + string processing.
+    /// Retries up to 3 times if the key generation fails.
+    /// Equivalent to createEncryptKey() in zca-js.
+    /// </summary>
     private void CreateEncryptKey(int attempt)
     {
         if (string.IsNullOrEmpty(_zcid) || string.IsNullOrEmpty(_zcidExt))
@@ -121,15 +141,10 @@ public class ParamsEncryptor
         var random = new Random();
         var length = random.Next(min, Math.Max(min + 1, max + 1));
         length = Math.Min(length, 12);
-
-        if (length > 12)
-            length = 12;
-
         const string chars = "0123456789abcdef";
         var result = new StringBuilder(length);
         for (int i = 0; i < length; i++)
             result.Append(chars[random.Next(chars.Length)]);
-
         return result.ToString();
     }
 

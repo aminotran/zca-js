@@ -15,9 +15,8 @@ namespace ICU.Lib.ZaloClientWeb.Auth;
 /// Handles cookie-based login to Zalo API.
 /// Implements the full login flow matching zca-js (apis/login.ts):
 /// 1. Encrypt params with ParamsEncryptor
-/// 2. POST to /api/login/getLoginInfo
-/// 3. Decrypt response to get LoginInfo
-/// 4. GET /api/login/getServerInfo for settings
+/// 2. GET /api/login/getLoginInfo → decrypt response → get LoginInfo
+/// 3. GET /api/login/getServerInfo for settings
 /// </summary>
 public class LoginHelper
 {
@@ -51,22 +50,18 @@ public class LoginHelper
             Language = credentials.Language ?? "vi"
         };
 
-        // Apply cookies to container
         _client.ApplyCookies(credentials.Cookie);
 
-        // Step 1: Call getLoginInfo API
         Logger.Info("Performing login...");
         var loginData = await PerformLoginAsync(ctx);
         if (loginData == null)
             throw new ZaloApiException("Login failed: could not get login info");
 
-        // Step 2: Call getServerInfo API
         Logger.Info("Getting server info...");
         var serverInfo = await GetServerInfoAsync(ctx);
         if (serverInfo == null)
             throw new ZaloApiException("Failed to get server info");
 
-        // Step 3: Populate context
         ctx.SecretKey = loginData.ZpwEnk;
         ctx.Uid = loginData.Uid;
         ctx.Settings = serverInfo.Settings ?? new Dictionary<string, object>();
@@ -97,6 +92,7 @@ public class LoginHelper
 
     /// <summary>
     /// Calls getLoginInfo API. Equivalent to login() in zca-js.
+    /// Uses UTF-8 key encryption (matching cryptojs.enc.Utf8.parse behavior).
     /// </summary>
     private async Task<LoginInfo?> PerformLoginAsync(ZaloContext ctx)
     {
@@ -131,7 +127,6 @@ public class LoginHelper
                 throw new ZaloApiException($"Login failed: {errMsg}");
             }
 
-            // Decrypt the response data
             if (!root.TryGetProperty("data", out var dataEl) || dataEl.ValueKind != JsonValueKind.String)
                 throw new ZaloApiException("Failed to fetch login info: no data");
 
@@ -139,10 +134,13 @@ public class LoginHelper
             if (string.IsNullOrEmpty(encryptedData))
                 throw new ZaloApiException("Failed to fetch login info: empty data");
 
+            // Decrypt: the "enk" from ParamsEncryptor is a 32-char hex string
+            // In zca-js: decryptResp(encryptedParams.enk, data.data) → decodeRespAES → cryptojs.enc.Utf8.parse(key)
+            // So the key is the ASCII bytes of the 32-char string, NOT base64-decoded
             string decryptedStr;
             if (!string.IsNullOrEmpty(enk))
             {
-                decryptedStr = AesHelper.DecryptAesCbc(enk, encryptedData);
+                decryptedStr = AesHelper.DecryptResponseAes(enk, encryptedData);
                 if (decryptedStr == null)
                     throw new ZaloApiException("Failed to decrypt login response");
             }
@@ -151,7 +149,6 @@ public class LoginHelper
                 decryptedStr = encryptedData;
             }
 
-            // Parse decrypted response into LoginInfo
             var loginInfo = JsonSerializer.Deserialize<LoginResponse>(decryptedStr);
             if (loginInfo == null)
                 throw new ZaloApiException("Failed to parse login response");
@@ -221,7 +218,6 @@ public class LoginHelper
             if (!root.TryGetProperty("data", out var dataEl))
                 throw new ZaloApiException("Failed to fetch server info: no data");
 
-            // Server info is not encrypted (unlike login)
             var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(dataEl.GetRawText());
 
             return new ServerInfoData
@@ -270,7 +266,6 @@ public class LoginHelper
         finalParams["type"] = ctx.ApiType.ToString();
         finalParams["client_version"] = ctx.ApiVersion.ToString();
 
-        // Generate signkey
         if (type == "getserverinfo")
         {
             var signDict = new Dictionary<string, object>
@@ -295,27 +290,35 @@ public class LoginHelper
 
     /// <summary>
     /// Creates encrypted parameters using ParamsEncryptor. Equivalent to _encryptParam() in zca-js.
+    /// The encrypt key from ParamsEncryptor is used as Base64 key for AES (not UTF-8),
+    /// because it's a derived hex-like string that's then base64-encoded.
+    /// But in zca-js: ParamsEncryptor.encodeAES(encryptedKey, stringifiedData, "base64", false)
+    /// uses the key as UTF-8 bytes. So we use EncryptAesCbc which takes base64 key.
+    /// Actually the encryptKey is a 32-char hex string, used as ASCII bytes for AES key.
+    /// We need EncryptAesCbcWithUtf8Key for this.
     /// </summary>
-    private async Task<EncryptResult?> EncryptParamAsync(ZaloContext ctx, Dictionary<string, object> data)
+    private Task<EncryptResult?> EncryptParamAsync(ZaloContext ctx, Dictionary<string, object> data)
     {
         try
         {
             var encryptor = new ParamsEncryptor(ctx.ApiType, ctx.Imei, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-
             var stringifiedData = JsonSerializer.Serialize(data);
             var encryptKey = encryptor.GetEncryptKey();
-            var encodedData = AesHelper.EncryptAesCbc(encryptKey, stringifiedData);
+
+            // In zca-js: ParamsEncryptor.encodeAES(encryptedKey, data, "base64", false)
+            // The key is UTF-8 bytes of the encryptKey string
+            var encodedData = AesHelper.EncryptAesCbcWithUtf8Key(encryptKey, stringifiedData, "base64");
             var paramsDict = encryptor.GetParams();
 
             if (paramsDict == null || string.IsNullOrEmpty(encodedData))
-                return null;
+                return Task.FromResult<EncryptResult?>(null);
 
-            return new EncryptResult
+            return Task.FromResult<EncryptResult?>(new EncryptResult
             {
                 EncodedData = encodedData,
                 EncryptedParams = paramsDict,
                 Enk = encryptKey
-            };
+            });
         }
         catch (Exception ex)
         {

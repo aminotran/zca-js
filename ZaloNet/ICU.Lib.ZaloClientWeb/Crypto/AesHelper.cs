@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -15,7 +14,8 @@ public static class AesHelper
 
     /// <summary>
     /// Encrypts data using AES-CBC with PKCS7 padding and zero IV.
-    /// Equivalent to encodeAES() in zca-js.
+    /// Key is a Base64-encoded string.
+    /// Equivalent to encodeAES() in zca-js (when using Base64 key).
     /// </summary>
     public static string? EncryptAesCbc(string secretKeyBase64, string plainText, int retry = 0)
     {
@@ -42,6 +42,7 @@ public static class AesHelper
 
     /// <summary>
     /// Decrypts data using AES-CBC with PKCS7 padding and zero IV.
+    /// Key is a Base64-encoded string.
     /// Equivalent to decodeAES() in zca-js.
     /// </summary>
     public static string? DecryptAesCbc(string secretKeyBase64, string cipherText, int retry = 0)
@@ -69,14 +70,27 @@ public static class AesHelper
     }
 
     /// <summary>
-    /// Encrypts data using AES-CBC with a hex key, zero IV, PKCS7 padding.
-    /// Equivalent to ParamsEncryptor.encodeAES() in zca-js.
+    /// Encrypts data using AES-CBC with UTF-8 string as key (NOT hex-decoded).
+    /// In zca-js: cryptojs.enc.Utf8.parse(e) — takes ASCII bytes of key string directly.
+    /// crypto-js internally pads the key to valid AES key size (16/24/32 bytes).
+    /// Uses zero IV, PKCS7 padding, hex output.
+    /// Equivalent to ParamsEncryptor.encodeAES() in zca-js for the fixed key.
     /// </summary>
-    public static string? EncryptAesCbcWithHexKey(string hexKey, string plainText, bool uppercase = false, int retry = 0)
+    public static string? EncryptAesCbcWithUtf8Key(string utf8Key, string plainText, string outputType = "hex", bool uppercase = false, int retry = 0)
     {
         try
         {
-            var keyBytes = HexStringToBytes(hexKey);
+            var keyBytes = Encoding.UTF8.GetBytes(utf8Key);
+            // crypto-js auto-pads/truncates to valid AES key size.
+            // For the fixed key "3FC4F0D2AB50057BCE0D90D9187A22B1" (32 chars → 32 bytes):
+            // it's exactly 32 bytes, so AES-256.
+            if (keyBytes.Length != 16 && keyBytes.Length != 24 && keyBytes.Length != 32)
+            {
+                // Round up to next valid key size
+                int targetSize = keyBytes.Length <= 16 ? 16 : keyBytes.Length <= 24 ? 24 : 32;
+                Array.Resize(ref keyBytes, targetSize);
+            }
+
             using var aes = Aes.Create();
             aes.Key = keyBytes;
             aes.IV = ZeroIv;
@@ -86,13 +100,18 @@ public static class AesHelper
             using var encryptor = aes.CreateEncryptor();
             var inputBytes = Encoding.UTF8.GetBytes(plainText);
             var cipherBytes = encryptor.TransformFinalBlock(inputBytes, 0, inputBytes.Length);
-            var result = BytesToHexString(cipherBytes);
-            return uppercase ? result.ToUpperInvariant() : result;
+
+            if (outputType == "hex")
+            {
+                var result = BytesToHexString(cipherBytes);
+                return uppercase ? result.ToUpperInvariant() : result;
+            }
+            return Convert.ToBase64String(cipherBytes);
         }
         catch
         {
             if (retry < 3)
-                return EncryptAesCbcWithHexKey(hexKey, plainText, uppercase, retry + 1);
+                return EncryptAesCbcWithUtf8Key(utf8Key, plainText, outputType, uppercase, retry + 1);
             return null;
         }
     }
@@ -104,18 +123,10 @@ public static class AesHelper
     {
         try
         {
-#if NETSTANDARD2_1
-            // .NET Standard 2.1 uses AesGcm with different constructor
-            using var aesGcm = new AesGcm(key);
-            var plainText = new byte[cipherText.Length];
-            aesGcm.Decrypt(iv, cipherText, tag, plainText, additionalData);
-            return plainText;
-#else
             var plainText = new byte[cipherText.Length];
             using var aesGcm = new AesGcm(key);
             aesGcm.Decrypt(iv, cipherText, tag, plainText, additionalData);
             return plainText;
-#endif
         }
         catch
         {
@@ -151,15 +162,21 @@ public static class AesHelper
     }
 
     /// <summary>
-    /// Decrypts the response from Zalo API using AES-CBC with hex key.
-    /// Equivalent to decodeRespAES() in zca-js.
+    /// Decrypts the response from Zalo API login using AES-CBC with UTF-8 key.
+    /// Key is treated as UTF-8 bytes (NOT Base64) — matching zca-js decodeRespAES().
+    /// The key is the "enk" from ParamsEncryptor (32-char hex string used as ASCII bytes).
     /// </summary>
-    public static string? DecryptResponseAes(string hexKey, string data)
+    public static string? DecryptResponseAes(string utf8Key, string data)
     {
         try
         {
             data = Uri.UnescapeDataString(data);
-            var keyBytes = Encoding.UTF8.GetBytes(hexKey);
+            var keyBytes = Encoding.UTF8.GetBytes(utf8Key);
+            if (keyBytes.Length != 16 && keyBytes.Length != 24 && keyBytes.Length != 32)
+            {
+                int targetSize = keyBytes.Length <= 16 ? 16 : keyBytes.Length <= 24 ? 24 : 32;
+                Array.Resize(ref keyBytes, targetSize);
+            }
 
             using var aes = Aes.Create();
             aes.Key = keyBytes;
@@ -179,19 +196,16 @@ public static class AesHelper
     }
 
     /// <summary>
-    /// Decrypts the response from login API using the secret key.
-    /// Equivalent to decryptResp() in zca-js.
+    /// Decrypts the login response. Equivalent to decryptResp() in zca-js.
     /// </summary>
     public static string? DecryptResponse(string key, string data)
     {
         try
         {
-            var result = DecryptResponseAes(key, data);
-            return result;
+            return DecryptResponseAes(key, data);
         }
         catch
         {
-            // In zca-js, if JSON parse fails, raw string is returned
             return null;
         }
     }
