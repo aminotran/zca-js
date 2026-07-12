@@ -60,6 +60,10 @@ public class ZaloClient : IDisposable
         if (_context == null)
             throw new ZaloApiException("Login failed - context could not be created");
 
+        // Assign the real cookie container (populated by ApplyCookies + HttpClient Set-Cookie headers)
+        // so that session save can extract cookies from it
+        _context.CookieContainer = _cookieContainer;
+
         Logger.Info("Logged in as", _context.Uid.ToString());
         Api = new ZaloApi(_context, _httpClient);
         return Api;

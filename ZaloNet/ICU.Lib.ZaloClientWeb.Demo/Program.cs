@@ -1,15 +1,19 @@
 using ICU.Lib.ZaloClientWeb;
 using ICU.Lib.ZaloClientWeb.Models;
+using ICU.Lib.ZaloClientWeb.Demo.Helpers;
 using ICU.Lib.ZaloClientWeb.Demo.Scenarios;
 
 namespace ICU.Lib.ZaloClientWeb.Demo;
 
 /// <summary>
 /// Interactive demo application for ICU.Lib.ZaloClientWeb.
+/// Features session persistence (auto-login) and logout.
 /// Run this project to explore the library's capabilities.
 /// </summary>
 public class Program
 {
+    private static ZaloClient? _client;
+
     public static async Task Main(string[] args)
     {
         Console.WriteLine("===========================================");
@@ -18,23 +22,67 @@ public class Program
         Console.WriteLine("===========================================");
         Console.WriteLine();
 
-        // Create client with default options
-        var client = new ZaloClient(new ZaloOptions
+        while (true)
+        {
+            var api = await TryAutoLoginOrShowLoginMenu();
+            if (api == null) break;
+
+            await ShowMainMenu(api);
+
+            // Dispose client to prepare for possible re-login
+            _client?.Dispose();
+            _client = null;
+        }
+
+        Console.WriteLine("Goodbye!");
+    }
+
+    /// <summary>
+    /// Attempts to auto-login from saved session. If failed/invalid, shows login menu.
+    /// Returns null when user selects Exit.
+    /// </summary>
+    private static async Task<ZaloApi?> TryAutoLoginOrShowLoginMenu()
+    {
+        // Try loading saved session
+        var saved = CredentialLoader.TryLoadSession();
+        if (saved != null)
+        {
+            Console.WriteLine("Found saved session. Attempting auto-login...");
+            _client = CreateClient();
+            try
+            {
+                var api = await _client.LoginAsync(saved);
+                Console.WriteLine($"Auto-login successful! Logged in as UID: {_client.Context?.Uid}");
+                return api;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Auto-login failed: {ex.Message}");
+                Console.WriteLine("Session may have expired. Please login again.");
+                CredentialLoader.DeleteSession();
+                _client?.Dispose();
+                _client = null;
+            }
+        }
+
+        return await ShowLoginMenu();
+    }
+
+    private static ZaloClient CreateClient()
+    {
+        return new ZaloClient(new ZaloOptions
         {
             Logging = true,
             ApiType = 30,
             ApiVersion = 671,
             ApiLogCallback = (msg) => Console.WriteLine(msg)
         });
-
-        var api = await ShowLoginMenu(client);
-        if (api == null) return;
-
-        await ShowMainMenu(api);
     }
 
-    private static async Task<ZaloApi?> ShowLoginMenu(ZaloClient client)
+    private static async Task<ZaloApi?> ShowLoginMenu()
     {
+        _client = CreateClient();
+
         while (true)
         {
             Console.WriteLine("--- LOGIN ---");
@@ -48,9 +96,13 @@ public class Program
             switch (choice)
             {
                 case "1":
-                    return await LoginWithCookieAsync(client);
+                    var api1 = await LoginWithCookieAsync(_client);
+                    if (api1 != null) return api1;
+                    break;
                 case "2":
-                    return await LoginWithQrAsync(client);
+                    var api2 = await LoginWithQrAsync(_client);
+                    if (api2 != null) return api2;
+                    break;
                 case "3":
                     return null;
                 default:
@@ -64,10 +116,18 @@ public class Program
     {
         try
         {
-            var credentials = Helpers.CredentialLoader.LoadFromFile("credentials.example.json");
+            var credentials = CredentialLoader.LoadFromFile("credentials.example.json");
             Console.WriteLine("Logging in with cookies...");
             var api = await client.LoginAsync(credentials);
             Console.WriteLine($"Logged in as UID: {client.Context?.Uid}");
+
+            // Save session for future auto-login
+            if (client.Context != null)
+            {
+                var session = CredentialLoader.FromContext(client.Context);
+                CredentialLoader.SaveSession(session);
+            }
+
             return api;
         }
         catch (Exception ex)
@@ -92,6 +152,14 @@ public class Program
                 }
             );
             Console.WriteLine($"Logged in as UID: {client.Context?.Uid}");
+
+            // Save session for future auto-login
+            if (client.Context != null)
+            {
+                var session = CredentialLoader.FromContext(client.Context);
+                CredentialLoader.SaveSession(session);
+            }
+
             return api;
         }
         catch (Exception ex)
@@ -101,12 +169,16 @@ public class Program
         }
     }
 
+    /// <summary>
+    /// Shows main menu. Returns false when user selects Logout/Exit.
+    /// </summary>
     private static async Task ShowMainMenu(ZaloApi api)
     {
         while (true)
         {
             Console.WriteLine();
             Console.WriteLine("--- MAIN MENU ---");
+            Console.WriteLine("0. Logout");
             Console.WriteLine("1. Listen to all WebSocket events");
             Console.WriteLine("2. Show account info");
             Console.WriteLine("3. Send a message");
@@ -121,6 +193,11 @@ public class Program
 
             switch (choice)
             {
+                case "0":
+                    // Logout: delete session and return to login menu
+                    CredentialLoader.DeleteSession();
+                    Console.WriteLine("Logged out successfully.");
+                    return;
                 case "1":
                     await WebSocketEventsDemo.RunAsync(api);
                     break;
@@ -143,7 +220,7 @@ public class Program
                     await EchoBotDemo.RunAsync(api);
                     break;
                 case "8":
-                    Console.WriteLine("Goodbye!");
+                    Console.WriteLine("Exiting...");
                     return;
                 default:
                     Console.WriteLine("Invalid choice. Try again.");
