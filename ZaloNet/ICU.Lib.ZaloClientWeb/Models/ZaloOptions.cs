@@ -63,4 +63,10 @@ public class ZaloOptions
     /// Optional image metadata getter (e.g. using ImageSharp).
     /// </summary>
     public ImageMetadataGetter? ImageMetadataGetter { get; set; }
+
+    /// <summary>
+    /// Optional callback for logging API request/response details.
+    /// Useful for debugging API calls.
+    /// </summary>
+    public Action<string>? ApiLogCallback { get; set; }
 }

@@ -18,8 +18,8 @@ public static class AccountInfoDemo
             Console.WriteLine($"Error: {response.Error}");
         }
 
-        var ownId = await api.GetOwnIdAsync();
-        Console.WriteLine(ownId.IsSuccess ? $"Own ID: {ownId.Data}" : $"Error: {ownId.Error}");
+        var ownId = api.GetOwnId();
+        Console.WriteLine($"Own ID: {ownId}");
 
         Console.WriteLine("Press Enter to continue...");
         Console.ReadLine();

@@ -23,7 +23,8 @@ public class Program
         {
             Logging = true,
             ApiType = 30,
-            ApiVersion = 671
+            ApiVersion = 671,
+            ApiLogCallback = (msg) => Console.WriteLine(msg)
         });
 
         var api = await ShowLoginMenu(client);

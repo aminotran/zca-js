@@ -35,10 +35,15 @@ public static class ZaloUtils
     }
 
     /// <summary>
-    /// Builds URL with Zalo API version params.
+    /// Builds URL with optional Zalo API version params.
     /// Equivalent to makeURL() in zca-js.
     /// </summary>
-    public static string MakeUrl(string baseUrl, Dictionary<string, string>? extraParams = null, int apiVersion = 671, int apiType = 30)
+    /// <param name="baseUrl">Base URL.</param>
+    /// <param name="extraParams">Extra query parameters.</param>
+    /// <param name="apiVersion">Zalo API version (zpw_ver). Ignored if addApiVersionParams is false.</param>
+    /// <param name="apiType">Zalo API type (zpw_type). Ignored if addApiVersionParams is false.</param>
+    /// <param name="addApiVersionParams">If false, does NOT add zpw_ver and zpw_type (used for getServerInfo).</param>
+    public static string MakeUrl(string baseUrl, Dictionary<string, string>? extraParams = null, int apiVersion = 671, int apiType = 30, bool addApiVersionParams = true)
     {
         var uri = new UriBuilder(baseUrl);
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
@@ -49,10 +54,13 @@ public static class ZaloUtils
                 query[kvp.Key] = kvp.Value;
         }
 
-        if (string.IsNullOrEmpty(query["zpw_ver"]))
-            query["zpw_ver"] = apiVersion.ToString();
-        if (string.IsNullOrEmpty(query["zpw_type"]))
-            query["zpw_type"] = apiType.ToString();
+        if (addApiVersionParams)
+        {
+            if (string.IsNullOrEmpty(query["zpw_ver"]))
+                query["zpw_ver"] = apiVersion.ToString();
+            if (string.IsNullOrEmpty(query["zpw_type"]))
+                query["zpw_type"] = apiType.ToString();
+        }
 
         uri.Query = query.ToString()!;
         return uri.ToString();

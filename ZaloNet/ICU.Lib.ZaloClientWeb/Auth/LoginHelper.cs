@@ -96,9 +96,11 @@ public class LoginHelper
     /// </summary>
     private async Task<LoginInfo?> PerformLoginAsync(ZaloContext ctx)
     {
+        Logger.Verbose("=== STEP: PerformLoginAsync (getLoginInfo) ===");
         try
         {
             var (encryptedParams, enk) = await GetEncryptParamsAsync(ctx, "getlogininfo");
+            Logger.Verbose("EncryptParams generated. enk length:", enk?.Length.ToString() ?? "null");
 
             var formData = new Dictionary<string, string>(encryptedParams)
             {
@@ -107,6 +109,7 @@ public class LoginHelper
 
             var url = ZaloUtils.MakeUrl("https://wpa.chat.zalo.me/api/login/getLoginInfo",
                 formData, ctx.ApiVersion, ctx.ApiType);
+            Logger.Verbose("GET URL:", url);
 
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("user-agent", ctx.UserAgent);
@@ -114,10 +117,13 @@ public class LoginHelper
             request.Headers.TryAddWithoutValidation("referer", "https://chat.zalo.me/");
 
             var response = await _httpClient.SendAsync(request);
+            Logger.Verbose("Response status:", ((int)response.StatusCode).ToString());
             if (!response.IsSuccessStatusCode)
                 throw new ZaloApiException($"Failed to fetch login info: {response.StatusCode}");
 
             var json = await response.Content.ReadAsStringAsync();
+            Logger.Verbose("Raw response (first 200 chars):", json.Substring(0, Math.Min(200, json.Length)));
+
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
@@ -131,6 +137,7 @@ public class LoginHelper
                 throw new ZaloApiException("Failed to fetch login info: no data");
 
             var encryptedData = dataEl.GetString();
+            Logger.Verbose("Encrypted data length:", encryptedData?.Length.ToString() ?? "null");
             if (string.IsNullOrEmpty(encryptedData))
                 throw new ZaloApiException("Failed to fetch login info: empty data");
 
@@ -140,24 +147,56 @@ public class LoginHelper
             string decryptedStr;
             if (!string.IsNullOrEmpty(enk))
             {
+                Logger.Verbose("Decrypting with enk (UTF-8 key)");
                 decryptedStr = AesHelper.DecryptResponseAes(enk, encryptedData);
+                Logger.Verbose("Decrypted string exists:", (decryptedStr != null).ToString());
+                if (decryptedStr == null)
+                {
+                    Logger.Warn("DecryptResponseAes with UTF-8 key failed, falling back to Base64 key...");
+                    decryptedStr = AesHelper.DecryptAesCbc(enk, encryptedData);
+                    Logger.Verbose("Fallback decryption exists:", (decryptedStr != null).ToString());
+                }
                 if (decryptedStr == null)
                     throw new ZaloApiException("Failed to decrypt login response");
             }
             else
             {
+                Logger.Warn("No enk provided, using raw encrypted data as decrypted");
                 decryptedStr = encryptedData;
             }
 
-            var loginInfo = JsonSerializer.Deserialize<LoginResponse>(decryptedStr);
+            // The decrypted response has a wrapper: {"error_code":0,"error_message":"","data":{...actual login info...}}
+            Logger.Verbose("Decrypted response (first 300 chars):", decryptedStr.Substring(0, Math.Min(300, decryptedStr.Length)));
+
+            using var loginDoc = JsonDocument.Parse(decryptedStr);
+            var loginRoot = loginDoc.RootElement;
+            if (loginRoot.TryGetProperty("data", out var innerData) && innerData.ValueKind == JsonValueKind.Object)
+            {
+                decryptedStr = innerData.GetRawText();
+                Logger.Verbose("Extracted inner 'data' object from wrapper");
+            }
+            else
+            {
+                Logger.Warn("No 'data' wrapper found in decrypted response - trying direct parse");
+            }
+
+            var loginInfo = JsonSerializer.Deserialize<LoginResponse>(decryptedStr, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (loginInfo == null)
                 throw new ZaloApiException("Failed to parse login response");
+
+            Logger.Info($"Login parsed: uid={loginInfo.Uid}, zpw_enk={(string.IsNullOrEmpty(loginInfo.ZpwEnk) ? "NULL" : "OK")}");
+            Logger.Info($"Login parsed: zpw_ws count={loginInfo.ZpwWs?.Length ?? 0}, hasServiceMap={loginInfo.ZpwServiceMapV3?.Count > 0}");
+
+            if (string.IsNullOrEmpty(loginInfo.ZpwEnk))
+                Logger.Warn("ZpwEnk is null/empty in decrypted response");
+            if (string.IsNullOrEmpty(loginInfo.Uid))
+                Logger.Warn("Uid is null/empty in decrypted response");
 
             return new LoginInfo
             {
                 Uid = long.TryParse(loginInfo.Uid, out var uid) ? uid : 0,
                 ZpwEnk = loginInfo.ZpwEnk,
-                ZpwWs = loginInfo.ZpwWs,
+                ZpwWs = loginInfo.ZpwWs?.Length > 0 ? loginInfo.ZpwWs[0] : null,
                 ZpwServiceMapV3 = loginInfo.ZpwServiceMapV3 ?? new Dictionary<string, string[]>(),
                 Send2MeId = loginInfo.Send2MeId,
                 Language = loginInfo.Language,
@@ -167,7 +206,7 @@ public class LoginHelper
         }
         catch (HttpRequestException ex)
         {
-            Logger.Error("Login failed:", ex.Message);
+            Logger.Error("Login failed (HTTP):", ex.Message);
             throw new ZaloApiException($"Login failed: {ex.Message}", ex);
         }
     }
@@ -194,7 +233,7 @@ public class LoginHelper
             };
 
             var url = ZaloUtils.MakeUrl("https://wpa.chat.zalo.me/api/login/getServerInfo",
-                formData, ctx.ApiVersion, ctx.ApiType);
+                formData, ctx.ApiVersion, ctx.ApiType, addApiVersionParams: false);
 
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.TryAddWithoutValidation("user-agent", ctx.UserAgent);
@@ -335,13 +374,21 @@ public class LoginHelper
 
     private class LoginResponse
     {
+        [System.Text.Json.Serialization.JsonPropertyName("uid")]
         public string? Uid { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("zpw_enk")]
         public string? ZpwEnk { get; set; }
-        public string? ZpwWs { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("zpw_ws")]
+        public string[]? ZpwWs { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("send2me_id")]
         public string? Send2MeId { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("language")]
         public string? Language { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("public_ip")]
         public string? PublicIp { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("haspcclient")]
         public int Haspcclient { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("zpw_service_map_v3")]
         public Dictionary<string, string[]>? ZpwServiceMapV3 { get; set; }
     }
 
