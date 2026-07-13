@@ -49,7 +49,8 @@ public static class ApiMethods
         ["sendFriendRequest"] = "friend", ["getFriendRequestStatus"] = "friend",
         ["getFriendBoardList"] = "friend_board",
 
-        ["sendMessageGroup"] = "group", ["sendStickerGroup"] = "group",
+        ["sendMessageGroup"] = "group", ["sendMessageGroupQuote"] = "group", ["sendMessageGroupMention"] = "group",
+        ["sendStickerGroup"] = "group",
         ["deleteMessageGroup"] = "group", ["undoGroup"] = "group",
         ["sendSeenEventGroup"] = "group", ["sendDeliveredEventGroup"] = "group",
         ["sendTypingEventGroup"] = "group",
@@ -87,7 +88,7 @@ public static class ApiMethods
         ["deleteGroupInviteBox"] = "group", ["upgradeGroupToCommunity"] = "group",
         ["keepAlive"] = "chat",
 
-        ["sendMessage"] = "chat", ["sendSticker"] = "chat",
+        ["sendMessage"] = "chat", ["sendMessageQuote"] = "chat", ["sendSticker"] = "chat",
         ["sendLink"] = "chat",
         ["sendBankCard"] = "zimsg", ["forwardMessage"] = "chat",
         ["deleteMessage"] = "chat", ["undo"] = "chat",
@@ -249,6 +250,10 @@ public static class ApiMethods
         ["sendCardGroup"] = "/api/group/forward",
 
         ["sendBankCard"] = "/api/transfer/card",
+
+        ["sendMessageQuote"] = "/api/message/sms/quote",
+        ["sendMessageGroupQuote"] = "/api/group/sendmsg/quote",
+        ["sendMessageGroupMention"] = "/api/group/mention",
 
         ["changeAccountAvatar"] = "/api/profile/upavatar",
         ["changeGroupAvatar"] = "/api/group/upavatar",

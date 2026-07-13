@@ -207,15 +207,158 @@ public class ZaloApi
     public Task<ZaloApiResponse<JsonElement>> InviteUserToGroupsAsync(long userId, List<string> groupIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "inviteUserToGroups", new { userId, groupIds });
 
     // ─── Message APIs (all encrypted POST) ────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> SendMessageAsync(string threadId, string message, ThreadType threadType = ThreadType.User)
+    public async Task<ZaloApiResponse<JsonElement>> SendMessageAsync(MessageContent message, string threadId, ThreadType threadType = ThreadType.User)
     {
         var ts = GetTimestamp();
-        if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessageGroup",
-                new { message, clientId = ts, ttl = 0, grid = threadId, visibility = 0 });
+        var isGroup = threadType == ThreadType.Group;
+
+        // Handle mentions
+        string? mentionInfo = null;
+        if (message.Mentions?.Count > 0 && isGroup)
+        {
+            var mentionsFinal = message.Mentions
+                .Where(m => m.Pos >= 0 && !string.IsNullOrEmpty(m.Uid) && m.Len > 0)
+                .Select(m => new
+                {
+                    pos = m.Pos,
+                    uid = m.Uid,
+                    len = m.Len,
+                    type = m.Uid == "-1" ? 1 : 0
+                })
+                .ToList();
+
+            var totalMentionLen = mentionsFinal.Sum(m => m.len);
+            if (totalMentionLen > message.Msg.Length)
+                throw new InvalidOperationException("Invalid mentions: total mention characters exceed message length");
+
+            mentionInfo = JsonSerializer.Serialize(mentionsFinal, _jsonOptions);
+        }
+
+        // Build params
+        var paramsDict = new Dictionary<string, object?>
+        {
+            ["message"] = message.Msg,
+            ["clientId"] = ts,
+            ["ttl"] = message.Ttl ?? 0,
+            [isGroup ? "grid" : "toid"] = threadId,
+            [isGroup ? "visibility" : "imei"] = isGroup ? (object?)0 : GetImei(),
+        };
+
+        // Add mentionInfo for group
+        if (mentionInfo != null)
+            paramsDict["mentionInfo"] = mentionInfo;
+
+        // Add styles (textProperties)
+        if (message.Styles?.Count > 0)
+        {
+            var stylesFinal = message.Styles.Select(s =>
+            {
+                var stVal = s.St;
+                if (stVal == "ind_$" && s.IndentSize.HasValue)
+                    stVal = $"ind_{s.IndentSize.Value}0";
+                return new
+                {
+                    start = s.Start,
+                    len = s.Len,
+                    st = stVal,
+                    indentSize = s.St == "ind_$" ? (int?)null : (int?)null
+                };
+            })
+            .Select(s => new { s.start, s.len, s.st })
+            .ToList();
+
+            paramsDict["textProperties"] = JsonSerializer.Serialize(new
+            {
+                styles = stylesFinal,
+                ver = 0
+            }, _jsonOptions);
+        }
+
+        // Add urgency
+        if (message.Urgency.HasValue && message.Urgency.Value > 0)
+        {
+            paramsDict["metaData"] = new Dictionary<string, object?>
+            {
+                ["urgency"] = (int)message.Urgency.Value
+            };
+        }
+
+        // Add quote
+        if (message.Quote != null)
+        {
+            var quote = message.Quote;
+            paramsDict["qmsgOwner"] = quote.UidFrom;
+            paramsDict["qmsgId"] = quote.MsgId;
+            paramsDict["qmsgCliId"] = quote.CliMsgId;
+            paramsDict["qmsgType"] = GetClientMessageType(quote.MsgType);
+            paramsDict["qmsgTs"] = quote.Ts;
+            paramsDict["qmsg"] = quote.Content is string s ? s : "";
+            paramsDict["qmsgTTL"] = quote.Ttl ?? 0;
+
+            if (isGroup && quote.Content != null && quote.Content is not string)
+            {
+                paramsDict["qmsgAttach"] = JsonSerializer.Serialize(PrepareQmsgAttach(quote), _jsonOptions);
+            }
+
+            // Quote path
+            if (isGroup)
+                return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessageGroupQuote", paramsDict);
+            else
+                return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessageQuote", paramsDict);
+        }
+
+        // Select endpoint
+        string endpoint;
+        if (isGroup)
+            endpoint = mentionInfo != null ? "sendMessageGroupMention" : "sendMessageGroup";
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessage",
-                new { message, clientId = ts, ttl = 0, toid = threadId, imei = GetImei() });
+            endpoint = "sendMessage";
+
+        return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, endpoint, paramsDict);
+    }
+
+    /// <summary>
+    /// Simple SendMessage overload for plain text.
+    /// </summary>
+    public Task<ZaloApiResponse<JsonElement>> SendMessageAsync(string threadId, string message, ThreadType threadType = ThreadType.User)
+        => SendMessageAsync((MessageContent)message, threadId, threadType);
+
+    private static string GetClientMessageType(string msgType)
+    {
+        return msgType switch
+        {
+            "chat.text" => "text",
+            "chat.photo" => "photo",
+            "chat.video" => "video",
+            "chat.sticker" => "sticker",
+            "chat.voice" => "voice",
+            "chat.link" => "link",
+            _ => msgType
+        };
+    }
+
+    private static object PrepareQmsgAttach(SendMessageQuote quote)
+    {
+        if (quote.Content is string) return quote.PropertyExt ?? new { };
+        if (quote.MsgType == "chat.todo")
+            return new
+            {
+                properties = new
+                {
+                    color = 0,
+                    size = 0,
+                    type = 0,
+                    subType = 0,
+                    ext = "{\"shouldParseLinkOrContact\":0}"
+                }
+            };
+
+        return new
+        {
+            thumbUrl = quote.AttachmentData ?? "",
+            oriUrl = quote.AttachmentData ?? "",
+            normalUrl = quote.AttachmentData ?? ""
+        };
     }
 
     public Task<ZaloApiResponse<JsonElement>> SendStickerAsync(string threadId, int stickerId, int stickerCategoryId, ThreadType threadType = ThreadType.User)
@@ -360,15 +503,15 @@ public class ZaloApi
     }
     public Task<ZaloApiResponse<JsonElement>> SendBankCardAsync(string threadId, object cardData, ThreadType threadType = ThreadType.User) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendBankCard", new { threadId, cardData, threadType });
 
-    public Task<ZaloApiResponse<JsonElement>> ForwardMessageAsync(string threadId, long messageId, ThreadType threadType = ThreadType.User)
+    public Task<ZaloApiResponse<JsonElement>> ForwardMessageAsync(string threadId, long messageId, string? msg = null, int? ttl = null, ThreadType threadType = ThreadType.User)
     {
         var ts = GetTimestamp();
         if (threadType == ThreadType.Group)
             return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "forwardMessage",
-                new { msgId = messageId, clientId = ts, grid = threadId, visibility = 0 });
+                new { msgId = messageId, clientId = ts, grid = threadId, visibility = 0, msg = msg ?? (object?)null!, ttl = ttl ?? 0 });
         else
             return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "forwardMessage",
-                new { msgId = messageId, clientId = ts, toid = threadId, imei = GetImei() });
+                new { msgId = messageId, clientId = ts, toid = threadId, imei = GetImei(), msg = msg ?? (object?)null!, ttl = ttl ?? 0 });
     }
 
     public Task<ZaloApiResponse<JsonElement>> DeleteMessageAsync(string messageId, string ownerId, bool onlyMe = false, ThreadType threadType = ThreadType.User)
