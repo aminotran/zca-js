@@ -712,6 +712,7 @@ public class ZaloApi
                 case "jpeg":
                 case "png":
                 case "webp":
+                case "gif":
                 {
                     if (totalSize > maxSizeMb * 1024L * 1024L)
                         throw new InvalidOperationException($"File {fileName} size exceed maximum size of {maxSizeMb}MB");
