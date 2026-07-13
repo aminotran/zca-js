@@ -9,19 +9,63 @@ namespace ICU.Lib.ZaloClientWeb.Models;
 /// </summary>
 public enum TextStyle
 {
-    Bold = 0,
-    Italic = 1,
-    Underline = 2,
-    StrikeThrough = 3,
-    Red = 4,
-    Orange = 5,
-    Yellow = 6,
-    Green = 7,
-    Small = 8,
-    Big = 9,
-    UnorderedList = 10,
-    OrderedList = 11,
-    Indent = 12,
+    /// <summary>Bold text</summary>
+    Bold,
+    /// <summary>Italic text</summary>
+    Italic,
+    /// <summary>Underlined text</summary>
+    Underline,
+    /// <summary>Strikethrough text</summary>
+    StrikeThrough,
+    /// <summary>Red color text</summary>
+    Red,
+    /// <summary>Orange color text</summary>
+    Orange,
+    /// <summary>Yellow color text</summary>
+    Yellow,
+    /// <summary>Green color text</summary>
+    Green,
+    /// <summary>Small font size (13px)</summary>
+    Small,
+    /// <summary>Big font size (18px)</summary>
+    Big,
+    /// <summary>Unordered bullet list</summary>
+    UnorderedList,
+    /// <summary>Ordered number list</summary>
+    OrderedList,
+    /// <summary>Indent (use IndentSize to specify spacing)</summary>
+    Indent,
+}
+
+/// <summary>
+/// Extension methods for TextStyle enum.
+/// </summary>
+public static class TextStyleExtensions
+{
+    /// <summary>
+    /// Converts TextStyle to the Zalo API string code.
+    /// Equivalent to the style string values in zca-js.
+    /// </summary>
+    public static string ToZaloCode(this TextStyle style, int? indentSize = null)
+    {
+        return style switch
+        {
+            TextStyle.Bold => "b",
+            TextStyle.Italic => "i",
+            TextStyle.Underline => "u",
+            TextStyle.StrikeThrough => "s",
+            TextStyle.Red => "c_db342e",
+            TextStyle.Orange => "c_f27806",
+            TextStyle.Yellow => "c_f7b503",
+            TextStyle.Green => "c_15a85f",
+            TextStyle.Small => "f_13",
+            TextStyle.Big => "f_18",
+            TextStyle.UnorderedList => "lst_1",
+            TextStyle.OrderedList => "lst_2",
+            TextStyle.Indent => indentSize.HasValue ? $"ind_{indentSize.Value}0" : "ind_$",
+            _ => throw new ArgumentOutOfRangeException(nameof(style), style, null)
+        };
+    }
 }
 
 /// <summary>
@@ -38,7 +82,7 @@ public class Style
     [JsonPropertyName("len")]
     public int Len { get; set; }
 
-    /// <summary>The style type</summary>
+    /// <summary>The style type as Zalo API code (e.g. "b", "i", "c_db342e")</summary>
     [JsonPropertyName("st")]
     public string St { get; set; } = "";
 
@@ -46,6 +90,26 @@ public class Style
     [JsonPropertyName("indentSize")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? IndentSize { get; set; }
+
+    /// <summary>
+    /// Creates a style with the given TextStyle and range.
+    /// </summary>
+    public Style() { }
+
+    /// <summary>
+    /// Creates a style from a TextStyle enum value.
+    /// </summary>
+    /// <param name="style">The text style</param>
+    /// <param name="start">Start position (0-based)</param>
+    /// <param name="len">Length of text the style applies to</param>
+    /// <param name="indentSize">Indent size (only used when style is Indent)</param>
+    public Style(TextStyle style, int start, int len, int? indentSize = null)
+    {
+        Start = start;
+        Len = len;
+        IndentSize = indentSize;
+        St = style.ToZaloCode(indentSize);
+    }
 }
 
 /// <summary>

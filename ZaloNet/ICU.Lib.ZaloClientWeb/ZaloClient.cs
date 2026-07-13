@@ -251,21 +251,12 @@ public class ZaloApi
         // Add styles (textProperties)
         if (message.Styles?.Count > 0)
         {
-            var stylesFinal = message.Styles.Select(s =>
+            var stylesFinal = message.Styles.Select(s => new
             {
-                var stVal = s.St;
-                if (stVal == "ind_$" && s.IndentSize.HasValue)
-                    stVal = $"ind_{s.IndentSize.Value}0";
-                return new
-                {
-                    start = s.Start,
-                    len = s.Len,
-                    st = stVal,
-                    indentSize = s.St == "ind_$" ? (int?)null : (int?)null
-                };
-            })
-            .Select(s => new { s.start, s.len, s.st })
-            .ToList();
+                start = s.Start,
+                len = s.Len,
+                st = s.St
+            }).ToList();
 
             paramsDict["textProperties"] = JsonSerializer.Serialize(new
             {
