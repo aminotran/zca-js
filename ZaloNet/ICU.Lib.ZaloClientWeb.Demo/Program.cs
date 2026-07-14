@@ -5,11 +5,6 @@ using ICU.Lib.ZaloClientWeb.Demo.Scenarios;
 
 namespace ICU.Lib.ZaloClientWeb.Demo;
 
-/// <summary>
-/// Interactive demo application for ICU.Lib.ZaloClientWeb.
-/// Features session persistence (auto-login) and logout.
-/// Run this project to explore the library's capabilities.
-/// </summary>
 public class Program
 {
     private static ZaloClient? _client;
@@ -27,6 +22,13 @@ public class Program
             return;
         }
 
+        // Quick test mode for other isolated tests
+        if (args.Length > 0 && args[0] == "scenario")
+        {
+            await RunLegacyScenario(args);
+            return;
+        }
+
         Console.WriteLine("===========================================");
         Console.WriteLine("   ICU.Lib.ZaloClientWeb Demo Application");
         Console.WriteLine("   Unofficial Zalo API for .NET");
@@ -38,7 +40,8 @@ public class Program
             var api = await TryAutoLoginOrShowLoginMenu();
             if (api == null) break;
 
-            await ShowMainMenu(api);
+            // Launch the new Zalo Web Terminal interface
+            await ZaloTerminalApp.RunAsync(api);
 
             // Dispose client to prepare for possible re-login
             _client?.Dispose();
@@ -48,13 +51,54 @@ public class Program
         Console.WriteLine("Goodbye!");
     }
 
-    /// <summary>
-    /// Attempts to auto-login from saved session. If failed/invalid, shows login menu.
-    /// Returns null when user selects Exit.
-    /// </summary>
+    private static async Task RunLegacyScenario(string[] args)
+    {
+        var api = await TryAutoLoginOrShowLoginMenu();
+        if (api == null) return;
+
+        if (args.Length > 1)
+        {
+            switch (args[1].ToLower())
+            {
+                case "echo":
+                    await EchoBotDemo.RunAsync(api);
+                    break;
+                case "chat":
+                    await ChatDemo.RunAsync(api);
+                    break;
+                case "message":
+                    await MessageDemo.RunAsync(api);
+                    break;
+                case "friends":
+                    await FriendDemo.RunAsync(api);
+                    break;
+                case "groups":
+                    await GroupDemo.RunAsync(api);
+                    break;
+                case "conversations":
+                    await ConversationListDemo.RunAsync(api);
+                    break;
+                case "media":
+                    await MediaSendDemo.RunAsync(api);
+                    break;
+                case "sticker":
+                    await StickerDemo.RunAsync(api);
+                    break;
+                case "account":
+                    await AccountInfoDemo.RunAsync(api);
+                    break;
+                default:
+                    Console.WriteLine($"Unknown scenario: {args[1]}");
+                    break;
+            }
+        }
+
+        _client?.Dispose();
+        _client = null;
+    }
+
     private static async Task<ZaloApi?> TryAutoLoginOrShowLoginMenu()
     {
-        // Try loading saved session
         var saved = CredentialLoader.TryLoadSession();
         if (saved != null)
         {
@@ -132,7 +176,6 @@ public class Program
             var api = await client.LoginAsync(credentials);
             Console.WriteLine($"Logged in as UID: {client.Context?.Uid}");
 
-            // Save session for future auto-login
             if (client.Context != null)
             {
                 var session = CredentialLoader.FromContext(client.Context);
@@ -164,7 +207,6 @@ public class Program
             );
             Console.WriteLine($"Logged in as UID: {client.Context?.Uid}");
 
-            // Save session for future auto-login
             if (client.Context != null)
             {
                 var session = CredentialLoader.FromContext(client.Context);
@@ -177,78 +219,6 @@ public class Program
         {
             Console.WriteLine($"QR login failed: {ex.Message}");
             return null;
-        }
-    }
-
-    /// <summary>
-    /// Shows main menu. Returns false when user selects Logout/Exit.
-    /// </summary>
-    private static async Task ShowMainMenu(ZaloApi api)
-    {
-        while (true)
-        {
-            Console.WriteLine();
-            Console.WriteLine("--- MAIN MENU ---");
-            Console.WriteLine("0. Logout");
-            Console.WriteLine("1. Listen to all WebSocket events");
-            Console.WriteLine("2. Show account info");
-            Console.WriteLine("3. Send a message");
-            Console.WriteLine("4. Manage friends");
-            Console.WriteLine("5. Manage groups (list info)");
-            Console.WriteLine("6. Get stickers");
-            Console.WriteLine("7. Echo bot (auto-reply)");
-            Console.WriteLine("8. Show conversation list");
-            Console.WriteLine("9. Real-time Chat (select & send)");
-            Console.WriteLine("10. Test send media APIs (link/video/voice/card/upload)");
-            Console.WriteLine("11. Exit");
-            Console.Write("Choose: ");
-
-            var choice = Console.ReadLine()?.Trim();
-
-            switch (choice)
-            {
-                case "0":
-                    // Logout: delete session and return to login menu
-                    CredentialLoader.DeleteSession();
-                    Console.WriteLine("Logged out successfully.");
-                    return;
-                case "1":
-                    await WebSocketEventsDemo.RunAsync(api);
-                    break;
-                case "2":
-                    await AccountInfoDemo.RunAsync(api);
-                    break;
-                case "3":
-                    await MessageDemo.RunAsync(api);
-                    break;
-                case "4":
-                    await FriendDemo.RunAsync(api);
-                    break;
-                case "5":
-                    await GroupDemo.RunAsync(api);
-                    break;
-                case "6":
-                    await StickerDemo.RunAsync(api);
-                    break;
-                case "7":
-                    await EchoBotDemo.RunAsync(api);
-                    break;
-                case "8":
-                    await ConversationListDemo.RunAsync(api);
-                    break;
-                case "9":
-                    await ChatDemo.RunAsync(api);
-                    break;
-                case "10":
-                    await MediaSendDemo.RunAsync(api);
-                    break;
-                case "11":
-                    Console.WriteLine("Exiting...");
-                    return;
-                default:
-                    Console.WriteLine("Invalid choice. Try again.");
-                    break;
-            }
         }
     }
 }
