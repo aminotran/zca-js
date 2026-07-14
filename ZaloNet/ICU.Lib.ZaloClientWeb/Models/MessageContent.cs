@@ -221,6 +221,15 @@ public class MessageContent
     [JsonIgnore]
     public int? Ttl { get; set; }
 
+    /// <summary>
+    /// File attachments to upload and send along with the message.
+    /// Supports: file paths (string), byte[] buffers, or AttachmentSource objects.
+    /// When set, SendMessageAsync will auto-upload + send in one call.
+    /// Equivalent to attachments in zca-js MessageContent.
+    /// </summary>
+    [JsonIgnore]
+    public List<object>? Attachments { get; set; }
+
     /// <summary>Create from plain string</summary>
     public static implicit operator MessageContent(string text) => new() { Msg = text };
 }

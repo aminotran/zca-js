@@ -211,6 +211,7 @@ public class ZaloApi
     {
         var ts = GetTimestamp();
         var isGroup = threadType == ThreadType.Group;
+        var hasAttachments = message.Attachments?.Count > 0;
 
         // Handle mentions
         string? mentionInfo = null;
@@ -234,6 +235,91 @@ public class ZaloApi
             mentionInfo = JsonSerializer.Serialize(mentionsFinal, _jsonOptions);
         }
 
+        // ─── If has attachments, upload + send in one call ─────────────
+        if (hasAttachments)
+        {
+            var msgText = message.Msg ?? "";
+            var hasQuote = message.Quote != null;
+
+            // Determine if text should be sent separately:
+            // TS: if (non-image single file AND msg has text + no quote) → send text as desc with attachment
+            // else → send text message first, then attachments
+            var firstExt = GetFirstAttachmentExtension(message.Attachments!);
+            var isSingleFile = message.Attachments!.Count == 1;
+            var canBeDesc = isSingleFile && firstExt is "jpg" or "jpeg" or "png" or "webp" or "gif";
+
+            ZaloApiResponse<JsonElement>? textResult = null;
+
+            // If NOT canBeDesc and there's text, send text message separately first
+            if ((!canBeDesc && msgText.Length > 0) || (msgText.Length > 0 && hasQuote))
+            {
+                var textParams = new Dictionary<string, object?>
+                {
+                    ["message"] = msgText,
+                    ["clientId"] = GetTimestamp(),
+                    ["ttl"] = message.Ttl ?? 0,
+                    [isGroup ? "grid" : "toid"] = threadId,
+                    [isGroup ? "visibility" : "imei"] = isGroup ? (object?)0 : GetImei(),
+                };
+
+                if (mentionInfo != null)
+                    textParams["mentionInfo"] = mentionInfo;
+
+                if (message.Styles?.Count > 0)
+                {
+                    textParams["textProperties"] = JsonSerializer.Serialize(new
+                    {
+                        styles = message.Styles.Select(s => new { s.Start, s.Len, s.St }).ToList(),
+                        ver = 0
+                    }, _jsonOptions);
+                }
+
+                if (message.Urgency.HasValue && message.Urgency.Value > 0)
+                    textParams["metaData"] = new Dictionary<string, object?> { ["urgency"] = (int)message.Urgency.Value };
+
+                if (hasQuote)
+                {
+                    AddQuoteParams(textParams, message.Quote!, isGroup);
+                    var qEndpoint = isGroup ? "sendMessageGroupQuote" : "sendMessageQuote";
+                    textResult = await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, qEndpoint, textParams);
+                }
+                else
+                {
+                    var textEndpoint = isGroup ? (mentionInfo != null ? "sendMessageGroupMention" : "sendMessageGroup") : "sendMessage";
+                    textResult = await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, textEndpoint, textParams);
+                }
+            }
+
+            // Upload attachments
+            var uploadSources = message.Attachments!.Select(a => a).ToArray();
+            var uploadResults = await UploadAttachmentAsync(uploadSources, threadId, threadType);
+
+            // Send each attachment
+            var attachmentResults = new List<ZaloApiResponse<JsonElement>>();
+            foreach (var upload in uploadResults)
+            {
+                var attachResult = await SendAttachmentMessageAsync(
+                    upload, threadId,
+                    canBeDesc ? msgText : null,
+                    threadType);
+                attachmentResults.Add(attachResult);
+            }
+
+            // Build combined result
+            var combinedData = new Dictionary<string, object?>
+            {
+                ["textResult"] = textResult?.Data,
+                ["attachmentResults"] = attachmentResults.Select(r => (object?)r.Data).ToList(),
+                ["isSuccess"] = attachmentResults.All(r => r.IsSuccess)
+            };
+
+            if (attachmentResults.All(r => r.IsSuccess))
+                return new ZaloApiResponse<JsonElement> { Data = JsonSerializer.SerializeToElement(combinedData, _jsonOptions) };
+            else
+                return new ZaloApiResponse<JsonElement> { Error = "Attachment sending failed", Data = JsonSerializer.SerializeToElement(combinedData, _jsonOptions) };
+        }
+
+        // ─── No attachments: original behavior ────────────────────────
         // Build params
         var paramsDict = new Dictionary<string, object?>
         {
@@ -277,21 +363,7 @@ public class ZaloApi
         // Add quote
         if (message.Quote != null)
         {
-            var quote = message.Quote;
-            paramsDict["qmsgOwner"] = quote.UidFrom;
-            paramsDict["qmsgId"] = quote.MsgId;
-            paramsDict["qmsgCliId"] = quote.CliMsgId;
-            paramsDict["qmsgType"] = GetClientMessageType(quote.MsgType);
-            paramsDict["qmsgTs"] = quote.Ts;
-            paramsDict["qmsg"] = quote.Content is string s ? s : "";
-            paramsDict["qmsgTTL"] = quote.Ttl ?? 0;
-
-            if (isGroup && quote.Content != null && quote.Content is not string)
-            {
-                paramsDict["qmsgAttach"] = JsonSerializer.Serialize(PrepareQmsgAttach(quote), _jsonOptions);
-            }
-
-            // Quote path
+            AddQuoteParams(paramsDict, message.Quote, isGroup);
             if (isGroup)
                 return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessageGroupQuote", paramsDict);
             else
@@ -306,6 +378,31 @@ public class ZaloApi
             endpoint = "sendMessage";
 
         return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, endpoint, paramsDict);
+    }
+
+    private void AddQuoteParams(Dictionary<string, object?> dict, SendMessageQuote quote, bool isGroup)
+    {
+        dict["qmsgOwner"] = quote.UidFrom;
+        dict["qmsgId"] = quote.MsgId;
+        dict["qmsgCliId"] = quote.CliMsgId;
+        dict["qmsgType"] = GetClientMessageType(quote.MsgType);
+        dict["qmsgTs"] = quote.Ts;
+        dict["qmsg"] = quote.Content is string s ? s : "";
+        dict["qmsgTTL"] = quote.Ttl ?? 0;
+
+        if (isGroup && quote.Content != null && quote.Content is not string)
+        {
+            dict["qmsgAttach"] = JsonSerializer.Serialize(PrepareQmsgAttach(quote), _jsonOptions);
+        }
+    }
+
+    private static string? GetFirstAttachmentExtension(List<object> attachments)
+    {
+        if (attachments.Count == 0) return null;
+        var first = attachments[0];
+        if (first is string path)
+            return Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+        return null;
     }
 
     /// <summary>
