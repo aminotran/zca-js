@@ -87,6 +87,56 @@ public class ZaloClient : IDisposable
         return await LoginAsync(credentials);
     }
 
+    /// <summary>
+    /// Exports current session cookies as a list of CookieItem.
+    /// Useful for persisting updated credentials (e.g., after Set-Cookie refresh).
+    /// </summary>
+    public List<CookieItem> GetCookies()
+    {
+        var cookies = new List<CookieItem>();
+        try
+        {
+            // Extract cookies from all known Zalo domains
+            var domains = new[]
+            {
+                "chat.zalo.me", "zalo.me", "wpa.chat.zalo.me",
+                "id.zalo.me", "tt-profile-wpa.zalo.me",
+                "tt-friend-wpa.zalo.me", "tt-group-wpa.zalo.me",
+                "tt-sticker-wpa.zalo.me", "tt-chat-wpa.zalo.me",
+                "tt-convers-wpa.zalo.me", "tt-alias-wpa.zalo.me",
+            };
+            foreach (var domain in domains)
+            {
+                var uri = new Uri($"https://{domain}");
+                var domainCookies = _cookieContainer.GetCookies(uri);
+                foreach (Cookie c in domainCookies)
+                {
+                    // Avoid duplicates
+                    if (cookies.Any(ex => ex.Name == c.Name && ex.Domain == c.Domain))
+                        continue;
+
+                    cookies.Add(new CookieItem
+                    {
+                        Name = c.Name,
+                        Value = c.Value,
+                        Domain = c.Domain,
+                        Path = c.Path,
+                        Secure = c.Secure,
+                        HttpOnly = c.HttpOnly,
+                        ExpirationDate = new DateTimeOffset(c.Expires, TimeSpan.Zero).ToUnixTimeSeconds(),
+                        SameSite = "unspecified",
+                        Session = c.Expires == DateTime.MinValue,
+                    });
+                }
+            }
+        }
+        catch { /* best-effort */ }
+        return cookies;
+    }
+
+    /// <summary>
+    /// Applies a list of cookies to the cookie container.
+    /// </summary>
     public void ApplyCookies(List<CookieItem> cookies)
     {
         foreach (var cookie in cookies)

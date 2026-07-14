@@ -130,7 +130,17 @@ public class Program
             Logging = true,
             ApiType = 30,
             ApiVersion = 671,
-            ApiLogCallback = (msg) => Console.WriteLine(msg)
+            ApiLogCallback = (msg) => Console.WriteLine(msg),
+            OnCookiesUpdated = (cookies) =>
+            {
+                // Auto-persist updated cookies to saved session
+                if (_client?.Context != null)
+                {
+                    var session = CredentialLoader.FromContext(_client.Context);
+                    session.Cookie = cookies;
+                    CredentialLoader.SaveSession(session);
+                }
+            }
         });
     }
 

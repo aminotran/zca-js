@@ -397,6 +397,36 @@ public static class ApiMethods
             }
             var response = await httpClient.SendAsync(request);
             var responseString = await response.Content.ReadAsStringAsync();
+
+            // Fire cookie update callback after every response (Set-Cookie auto-processed by CookieContainer)
+            if (ctx.Options.OnCookiesUpdated != null)
+            {
+                try
+                {
+                    var cookies = new List<CookieItem>();
+                    var domains = new[] { "chat.zalo.me", "zalo.me", "wpa.chat.zalo.me" };
+                    foreach (var domain in domains)
+                    {
+                        var uri = new Uri($"https://{domain}");
+                        var domainCookies = ctx.CookieContainer.GetCookies(uri);
+                        foreach (Cookie c in domainCookies)
+                        {
+                            if (cookies.Any(ex => ex.Name == c.Name && ex.Domain == c.Domain))
+                                continue;
+                            cookies.Add(new CookieItem
+                            {
+                                Name = c.Name, Value = c.Value, Domain = c.Domain,
+                                Path = c.Path, Secure = c.Secure, HttpOnly = c.HttpOnly,
+                                ExpirationDate = new DateTimeOffset(c.Expires, TimeSpan.Zero).ToUnixTimeSeconds(),
+                                SameSite = "unspecified", Session = c.Expires == DateTime.MinValue,
+                            });
+                        }
+                    }
+                    ctx.Options.OnCookiesUpdated?.Invoke(cookies);
+                }
+                catch { /* best-effort */ }
+            }
+
             if (ctx.Options.Logging && endpoint != null)
             {
                 var preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;

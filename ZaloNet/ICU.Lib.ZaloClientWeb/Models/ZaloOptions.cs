@@ -69,4 +69,11 @@ public class ZaloOptions
     /// Useful for debugging API calls.
     /// </summary>
     public Action<string>? ApiLogCallback { get; set; }
+
+    /// <summary>
+    /// Optional callback invoked when cookies are updated via Set-Cookie response headers.
+    /// Receives the full list of current CookieItems so the caller can persist updated credentials.
+    /// Equivalent to the implicit cookie jar update in zca-js utils.ts.
+    /// </summary>
+    public Action<List<CookieItem>>? OnCookiesUpdated { get; set; }
 }
