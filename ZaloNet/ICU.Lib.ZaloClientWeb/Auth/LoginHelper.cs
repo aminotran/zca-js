@@ -270,19 +270,24 @@ public class LoginHelper
             var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(dataEl.GetRawText());
 
             ExtraVerInfo? extraVerObj = null;
+            string? extraVerStr = null;
             if (serverInfo?.ExtraVer != null)
             {
-                try { extraVerObj = JsonSerializer.Deserialize<ExtraVerInfo>(serverInfo.ExtraVer); }
+                try 
+                { 
+                    extraVerStr = serverInfo.ExtraVer.Value.GetRawText();
+                    extraVerObj = JsonSerializer.Deserialize<ExtraVerInfo>(extraVerStr); 
+                }
                 catch { /* best-effort */ }
             }
 
             return new ServerInfoData
             {
                 Settings = serverInfo != null
-                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(serverInfo.Settings?.GetRawText() ?? "{}")
+                    ? JsonSerializer.Deserialize<Dictionary<string, object>>((serverInfo.Setttings ?? serverInfo.Settings)?.GetRawText() ?? "{}")
                     : new Dictionary<string, object>(),
                 ExtraVer = extraVerObj,
-                ExtraVerStr = serverInfo?.ExtraVer
+                ExtraVerStr = extraVerStr
             };
         }
         catch (HttpRequestException ex)
@@ -412,8 +417,12 @@ public class LoginHelper
 
     private class ServerInfoResponse
     {
+        [System.Text.Json.Serialization.JsonPropertyName("setttings")]
+        public JsonElement? Setttings { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("settings")]
         public JsonElement? Settings { get; set; }
-        public string? ExtraVer { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("extra_ver")]
+        public JsonElement? ExtraVer { get; set; }
     }
 
     internal class ServerInfoData
