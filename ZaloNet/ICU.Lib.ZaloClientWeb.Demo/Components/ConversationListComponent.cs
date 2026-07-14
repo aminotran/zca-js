@@ -25,6 +25,8 @@ public static class ConversationListComponent
         _nameCache.Clear();
 
         var items = await FetchConversationsAsync(api);
+        // Sort by newest activity first
+        items = items.OrderByDescending(i => i.LastTime).ToList();
         if (items.Count == 0)
         {
             AnsiConsole.MarkupLine("[yellow]No conversations found.[/]");
@@ -43,7 +45,13 @@ public static class ConversationListComponent
 
         try
         {
-            var result = await api.GetConversationAsync();
+            // Use the real getContext API endpoint which returns actual lastMsg and lastTime
+            var result = await api.GetContextAsync();
+            if (!result.IsSuccess)
+            {
+                // Fallback to synthetic GetConversationAsync if real API fails
+                result = await api.GetConversationAsync();
+            }
             if (!result.IsSuccess) return items;
 
             var root = result.Data;

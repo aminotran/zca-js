@@ -1292,6 +1292,13 @@ public class ZaloApi
         catch (Exception ex) { return new ZaloApiResponse<JsonElement> { Data = default, Error = ex.Message }; }
     }
 
+    /// <summary>
+    /// Get the real conversation list from Zalo's getContext API.
+    /// Returns structured data with conversations, profiles, and groupInfo.
+    /// Equivalent to zca-js's getContext().
+    /// </summary>
+    public Task<ZaloApiResponse<JsonElement>> GetContextAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getContext");
+
     public Task<ZaloApiResponse<JsonElement>> GetArchivedChatListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getArchivedChatList");
     public Task<ZaloApiResponse<JsonElement>> UpdateArchivedChatListAsync(string threadId, bool archive, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateArchivedChatList", new { threadId, archive, threadType });
     public Task<ZaloApiResponse<JsonElement>> GetHiddenConversationsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getHiddenConversations");
