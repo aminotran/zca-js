@@ -435,9 +435,9 @@ public class ZaloApi
         dict["qmsgOwner"] = quote.UidFrom;
         dict["qmsgId"] = quote.MsgId;
         dict["qmsgCliId"] = quote.CliMsgId;
-        dict["qmsgType"] = GetClientMessageType(quote.MsgType);
+        dict["qmsgType"] = ZaloUtils.GetClientMessageType(quote.MsgType);
         dict["qmsgTs"] = quote.Ts;
-        dict["qmsg"] = quote.Content is string s ? s : "";
+        dict["qmsg"] = quote.Content is string s ? s : ZaloUtils.GetClientMessageType(quote.MsgType).ToString();
         dict["qmsgTTL"] = quote.Ttl ?? 0;
 
         if (isGroup && quote.Content != null && quote.Content is not string)
@@ -460,20 +460,6 @@ public class ZaloApi
     /// </summary>
     public Task<ZaloApiResponse<JsonElement>> SendMessageAsync(string threadId, string message, ThreadType threadType = ThreadType.User)
         => SendMessageAsync((MessageContent)message, threadId, threadType);
-
-    private static string GetClientMessageType(string msgType)
-    {
-        return msgType switch
-        {
-            "chat.text" => "text",
-            "chat.photo" => "photo",
-            "chat.video" => "video",
-            "chat.sticker" => "sticker",
-            "chat.voice" => "voice",
-            "chat.link" => "link",
-            _ => msgType
-        };
-    }
 
     private static object PrepareQmsgAttach(SendMessageQuote quote)
     {
@@ -499,15 +485,15 @@ public class ZaloApi
         };
     }
 
-    public Task<ZaloApiResponse<JsonElement>> SendStickerAsync(string threadId, int stickerId, int stickerCategoryId, ThreadType threadType = ThreadType.User)
+    public Task<ZaloApiResponse<JsonElement>> SendStickerAsync(string threadId, int stickerId, int stickerCategoryId, int type = 1, ThreadType threadType = ThreadType.User)
     {
         var ts = GetTimestamp();
         if (threadType == ThreadType.Group)
             return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendStickerGroup",
-                new { stickerId, cateId = stickerCategoryId, clientId = ts, ttl = 0, grid = threadId, visibility = 0 });
+                new { stickerId, cateId = stickerCategoryId, type, clientId = ts, ttl = 0, zsource = 101, grid = threadId, visibility = 0 });
         else
             return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendSticker",
-                new { stickerId, cateId = stickerCategoryId, clientId = ts, ttl = 0, toid = threadId, imei = GetImei() });
+                new { stickerId, cateId = stickerCategoryId, type, clientId = ts, ttl = 0, zsource = 101, toid = threadId, imei = GetImei() });
     }
 
     public async Task<ZaloApiResponse<JsonElement>> SendLinkAsync(string threadId, string link, string? msg = null, ThreadType threadType = ThreadType.User)
@@ -598,22 +584,37 @@ public class ZaloApi
                 new { toId = threadId, clientId = ts.ToString(), ttl = 0, zsource = 704, msgType = 5, msgInfo, imei = GetImei() });
     }
 
-    public async Task<ZaloApiResponse<JsonElement>> SendVoiceAsync(string threadId, string voiceUrl, int duration = 0, string? msg = null, ThreadType threadType = ThreadType.User)
+    public async Task<ZaloApiResponse<JsonElement>> SendVoiceAsync(string threadId, string voiceUrl, int? fileSize = null, string? msg = null, ThreadType threadType = ThreadType.User)
     {
         var ts = GetTimestamp();
+
+        // TS does HEAD request to get content-length for fileSize
+        int computedFileSize = fileSize ?? 0;
+        if (computedFileSize == 0)
+        {
+            try
+            {
+                using var headRequest = new HttpRequestMessage(HttpMethod.Head, voiceUrl);
+                var headResponse = await _httpClient.SendAsync(headRequest);
+                if (headResponse.IsSuccessStatusCode && headResponse.Content.Headers.ContentLength.HasValue)
+                    computedFileSize = (int)headResponse.Content.Headers.ContentLength.Value;
+            }
+            catch { /* best-effort */ }
+        }
+
         var msgInfo = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["voiceUrl"] = voiceUrl,
-            ["duration"] = duration,
-            ["title"] = msg ?? ""
+            ["m4aUrl"] = voiceUrl,
+            ["fileSize"] = computedFileSize,
         }, _jsonOptions);
 
         if (threadType == ThreadType.Group)
             return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVoiceGroup",
-                new { grid = threadId, visibility = 0, clientId = ts.ToString(), ttl = 0, zsource = 704, msgType = 6, msgInfo, imei = GetImei() });
+                new { grid = threadId, visibility = 0, clientId = ts.ToString(), ttl = 0, zsource = -1, msgType = 3, msgInfo, imei = GetImei() });
         else
             return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVoice",
-                new { toId = threadId, clientId = ts.ToString(), ttl = 0, zsource = 704, msgType = 6, msgInfo, imei = GetImei() });
+                new { toId = threadId, clientId = ts.ToString(), ttl = 0, zsource = -1, msgType = 3, msgInfo, imei = GetImei() });
     }
 
     public async Task<ZaloApiResponse<JsonElement>> SendCardAsync(string threadId, long userId, string? msg = null, ThreadType threadType = ThreadType.User)
@@ -641,22 +642,114 @@ public class ZaloApi
     }
     public Task<ZaloApiResponse<JsonElement>> SendBankCardAsync(string threadId, object cardData, ThreadType threadType = ThreadType.User) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendBankCard", new { threadId, cardData, threadType });
 
-    public Task<ZaloApiResponse<JsonElement>> ForwardMessageAsync(string threadId, long messageId, string? msg = null, int? ttl = null, ThreadType threadType = ThreadType.User)
+    /// <summary>
+    /// Forward message to a thread.
+    /// Equivalent to forwardMessage() in zca-js (multi-thread support + reference).
+    /// </summary>
+    public Task<ZaloApiResponse<JsonElement>> ForwardMessageAsync(string message, List<string> threadIds, long? referenceMsgId = null, long? referenceTs = null, int? referenceFwLvl = null, int? ttl = null, ThreadType threadType = ThreadType.User)
     {
+        if (string.IsNullOrEmpty(message))
+            throw new InvalidOperationException("Missing message content");
+        if (threadIds == null || threadIds.Count == 0)
+            throw new InvalidOperationException("Missing thread IDs");
+
         var ts = GetTimestamp();
-        if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "forwardMessage",
-                new { msgId = messageId, clientId = ts, grid = threadId, visibility = 0, msg = msg ?? (object?)null!, ttl = ttl ?? 0 });
+        var clientId = ts.ToString();
+
+        object decorLog;
+        object msgInfo;
+
+        if (referenceMsgId.HasValue && referenceTs.HasValue)
+        {
+            var refId = referenceMsgId.Value.ToString();
+            var refTs = referenceTs.Value;
+            var fwLvl = referenceFwLvl ?? 2;
+
+            decorLog = new
+            {
+                fw = new
+                {
+                    pmsg = new { st = 1, ts = refTs, id = refId },
+                    rmsg = new { st = 1, ts = refTs, id = refId },
+                    fwLvl = fwLvl,
+                }
+            };
+
+            msgInfo = new
+            {
+                message,
+                reference = JsonSerializer.Serialize(new
+                {
+                    type = 3,
+                    data = JsonSerializer.Serialize(new
+                    {
+                        id = refId,
+                        ts = refTs,
+                        logSrcType = 0,
+                        fwLvl = fwLvl,
+                    })
+                })
+            };
+        }
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "forwardMessage",
-                new { msgId = messageId, clientId = ts, toid = threadId, imei = GetImei(), msg = msg ?? (object?)null!, ttl = ttl ?? 0 });
+        {
+            decorLog = new { };
+            msgInfo = new { message };
+        }
+
+        var isGroup = threadType == ThreadType.Group;
+
+        object paramsObj;
+        if (isGroup)
+        {
+            paramsObj = new
+            {
+                grids = threadIds.Select(id => new { clientId, grid = id, ttl = ttl ?? 0 }).ToArray(),
+                ttl = ttl ?? 0,
+                msgType = "1",
+                totalIds = threadIds.Count,
+                msgInfo = JsonSerializer.Serialize(msgInfo, _jsonOptions),
+                decorLog = JsonSerializer.Serialize(decorLog, _jsonOptions),
+            };
+        }
+        else
+        {
+            paramsObj = new
+            {
+                toIds = threadIds.Select(id => new { clientId, toUid = id, ttl = ttl ?? 0 }).ToArray(),
+                imei = GetImei(),
+                ttl = ttl ?? 0,
+                msgType = "1",
+                totalIds = threadIds.Count,
+                msgInfo = JsonSerializer.Serialize(msgInfo, _jsonOptions),
+                decorLog = JsonSerializer.Serialize(decorLog, _jsonOptions),
+            };
+        }
+
+        // Forward uses file service endpoint: mforward instead of forwardMessage
+        var fileService = GetFileServiceUrl();
+        var endpoint = isGroup ? $"{fileService}/api/group/mforward" : $"{fileService}/api/message/mforward";
+        var url = ZaloUtils.MakeUrl(endpoint, null, _context.ApiVersion, _context.ApiType);
+
+        return SendEncryptedPostToUrlAsync(url, paramsObj);
     }
 
     public Task<ZaloApiResponse<JsonElement>> DeleteMessageAsync(string messageId, string ownerId, bool onlyMe = false, ThreadType threadType = ThreadType.User)
     {
+        var isSelf = _context.Uid.ToString() == ownerId;
+        var isGroup = threadType == ThreadType.Group;
+
+        // Validation: can't delete own message for everyone - use Undo instead
+        if (isSelf && !onlyMe)
+            throw new InvalidOperationException("To delete your message for everyone, use undo api instead");
+
+        // Validation: can't delete messages for everyone in private chat
+        if (!isGroup && !onlyMe)
+            throw new InvalidOperationException("Can't delete message for everyone in a private chat");
+
         var ts = GetTimestamp();
-        var endpoint = threadType == ThreadType.Group ? "deleteMessageGroup" : "deleteMessage";
-        if (threadType == ThreadType.Group)
+        var endpoint = isGroup ? "deleteMessageGroup" : "deleteMessage";
+        if (isGroup)
             return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, endpoint,
                 new { grid = "", cliMsgId = ts, msgs = new[] { new { cliMsgId = "0", globalMsgId = messageId, ownerId, destId = "" } }, onlyMe = onlyMe ? 1 : 0 });
         else

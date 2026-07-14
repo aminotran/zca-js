@@ -261,7 +261,7 @@ public static class ChatPanelComponent
                 {
                     var stickerId = parts[1];
                     var stkResult = await api.SendStickerAsync(
-                        conversation.ThreadId, int.Parse(stickerId), 0, threadType);
+                        conversation.ThreadId, int.Parse(stickerId), 0, 1, threadType);
                     if (stkResult.IsSuccess)
                     {
                         _messages.Add(new DisplayMessage

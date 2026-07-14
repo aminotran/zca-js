@@ -26,7 +26,7 @@ public static class ConversationListComponent
 
         var items = await FetchConversationsAsync(api);
         // Sort by newest activity first
-        items = items.OrderByDescending(i => i.LastTime).ToList();
+        items = items.OrderByDescending(i => i.LastTime).ThenBy(i => i.Name).ToList();
         if (items.Count == 0)
         {
             AnsiConsole.MarkupLine("[yellow]No conversations found.[/]");
@@ -45,57 +45,55 @@ public static class ConversationListComponent
 
         try
         {
-            // Use the real getContext API endpoint which returns actual lastMsg and lastTime
-            var result = await api.GetContextAsync();
-            if (!result.IsSuccess)
-            {
-                // Fallback to synthetic GetConversationAsync if real API fails
-                result = await api.GetConversationAsync();
-            }
+            // Get conversation list from friends + groups
+            var result = await api.GetConversationAsync();
             if (!result.IsSuccess) return items;
 
             var root = result.Data;
-            JsonElement convArray;
-            JsonElement dataWrapper = default;
+            JsonElement convArray = default;
 
-            if (root.TryGetProperty("data", out dataWrapper) && dataWrapper.ValueKind == JsonValueKind.Object)
+            // GetConversationAsync wraps response in { data: { conversations: [...], profiles: {...}, groupInfo: {...} } }
+            // Unwrap one level if needed
+            if (root.TryGetProperty("data", out var dataWrapper) && dataWrapper.ValueKind == JsonValueKind.Object)
+                root = dataWrapper;
+
+            // Parse profiles cache
+            if (root.TryGetProperty("profiles", out var profiles) && profiles.ValueKind == JsonValueKind.Object)
             {
-                if (dataWrapper.TryGetProperty("profiles", out var profiles) && profiles.ValueKind == JsonValueKind.Object)
+                foreach (var profile in profiles.EnumerateObject())
                 {
-                    foreach (var profile in profiles.EnumerateObject())
-                    {
-                        var key = profile.Name;
-                        var val = profile.Value;
-                        var name = val.TryGetProperty("displayName", out var dn)
-                            ? dn.GetString()
-                            : val.TryGetProperty("name", out var n)
-                                ? n.GetString()
-                                : null;
-                        if (name != null && !_nameCache.ContainsKey(key))
-                            _nameCache[key] = name;
-                    }
+                    var key = profile.Name;
+                    var val = profile.Value;
+                    var name = val.TryGetProperty("displayName", out var dn)
+                        ? dn.GetString()
+                        : val.TryGetProperty("name", out var n)
+                            ? n.GetString()
+                            : null;
+                    if (name != null && !_nameCache.ContainsKey(key))
+                        _nameCache[key] = name;
                 }
-
-                if (dataWrapper.TryGetProperty("groupInfo", out var groupInfo) && groupInfo.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var grp in groupInfo.EnumerateObject())
-                    {
-                        var key = grp.Name;
-                        var val = grp.Value;
-                        var name = val.TryGetProperty("name", out var gn) ? gn.GetString() : null;
-                        if (name != null && !_nameCache.ContainsKey(key))
-                            _nameCache[key] = name;
-                    }
-                }
-
-                convArray = dataWrapper.TryGetProperty("conversations", out var convs)
-                    ? convs
-                    : root;
             }
-            else
+
+            // Parse groupInfo cache
+            if (root.TryGetProperty("groupInfo", out var groupInfo) && groupInfo.ValueKind == JsonValueKind.Object)
             {
+                foreach (var grp in groupInfo.EnumerateObject())
+                {
+                    var key = grp.Name;
+                    var val = grp.Value;
+                    var name = val.TryGetProperty("name", out var gn) ? gn.GetString() : null;
+                    if (name != null && !_nameCache.ContainsKey(key))
+                        _nameCache[key] = name;
+                }
+            }
+
+            // Get conversations array
+            if (root.TryGetProperty("conversations", out var convs))
+                convArray = convs;
+            else if (root.ValueKind == JsonValueKind.Array)
                 convArray = root;
-            }
+            else
+                return items;
 
             if (convArray.ValueKind != JsonValueKind.Array) return items;
 
