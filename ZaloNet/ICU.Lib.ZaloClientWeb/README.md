@@ -3,14 +3,16 @@
 [![.NET](https://img.shields.io/badge/.NET-Standard%202.1-512BD4)](https://dotnet.microsoft.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**ICU.Lib.ZaloClientWeb** là thư viện .NET không chính thức cho Zalo API, được port từ [zca-js](https://github.com/RFS-ADRENO/zca-js) (TypeScript) sang C#. Cho phép tương tác với Zalo API thông qua các phương thức mạnh mẽ, bao gồm gửi/nhận tin nhắn, quản lý nhóm, bạn bè, xử lý sự kiện real-time qua WebSocket với **strongly-typed event args**.
+**ICU.Lib.ZaloClientWeb** là thư viện .NET không chính thức cho Zalo API, được port từ [zca-js](https://github.com/RFS-ADRENO/zca-js) (TypeScript) sang C#. Cho phép tương tác với Zalo API thông qua các phương thức mạnh mẽ, bao gồm gửi/nhận tin nhắn (text, sticker, link, video, voice, card, ảnh, file), quản lý nhóm, bạn bè, xử lý sự kiện real-time qua WebSocket với **strongly-typed event args**.
 
 ---
 
 ## 🚀 Tính năng chính
 
 - **Authentication**: Cookie login, QR code login
-- **Messaging**: Gửi text, sticker, link, video, voice, card, bank card
+- **Messaging**: Gửi text, sticker, link, video, voice, card, bank card, ảnh, file
+- **Advanced Messaging**: Mention (@user), Quote (trả lời), TextStyle (Bold, Italic, Underline...), Urgency
+- **Media Upload/Download**: Upload ảnh (jpg, png, webp, gif), video (mp4), file bất kỳ với chunk upload
 - **Groups**: Tạo, quản lý nhóm, thêm/xóa thành viên, phân quyền
 - **Friends**: Quản lý bạn bè, gửi/chấp nhận/từ chối lời mời kết bạn
 - **Real-time WebSocket**: Nhận sự kiện tin nhắn, typing, reaction, seen, delivered, group/friend events với **strongly-typed data** (pattern matching)
@@ -35,10 +37,13 @@ dotnet add reference ICU.Lib.ZaloClientWeb/ICU.Lib.ZaloClientWeb.csproj
 
 NuGet dependencies tự động restore:
 ```xml
-<PackageReference Include="System.Text.Json" Version="8.0.5" />
+<PackageReference Include="System.Text.Json" Version="9.0.1" />
 <PackageReference Include="System.Net.WebSockets.Client" Version="4.3.2" />
-<PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" />
-<PackageReference Include="QRCoder" Version="1.6.1" />
+<PackageReference Include="System.Security.Cryptography.Algorithms" Version="4.3.1" />
+<PackageReference Include="System.Threading.Channels" Version="9.0.1" />
+<PackageReference Include="SixLabors.ImageSharp" Version="3.1.7" />
+<PackageReference Include="QRCoder" Version="1.7.0" />
+<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.1" />
 ```
 
 ---
@@ -47,7 +52,7 @@ NuGet dependencies tự động restore:
 
 ```
 ICU.Lib.ZaloClientWeb/
-├── ZaloClient.cs               # ZaloClient + ZaloApi (~137 methods)
+├── ZaloClient.cs               # ZaloClient + ZaloApi (~150 methods)
 ├── Auth/
 │   ├── LoginHelper.cs          # Cookie login
 │   └── QrLoginHelper.cs        # QR code login
@@ -57,17 +62,20 @@ ICU.Lib.ZaloClientWeb/
 ├── Exceptions/                 # 4 exception classes
 ├── Models/
 │   ├── Auth: Credentials.cs, LoginInfo.cs, ZaloContext.cs, ZaloOptions.cs
-│   ├── Messages: Message.cs (UserMessageInfo, GroupMessageInfo), Reactions.cs
+│   ├── Messages: Message.cs (UserMessageInfo, GroupMessageInfo), MessageContent.cs (TextStyle, Style, Urgency, Mention), SendMessageResult.cs
 │   ├── Events: Typing.cs, Undo.cs, SeenMessage.cs, DeliveredMessage.cs
 │   ├── FriendEvent.cs          # 5 typed data classes + FriEvent wrapper
 │   ├── GroupEvent.cs           # 7 typed data classes + GroupEvent wrapper
+│   ├── UploadAttachmentResponse.cs  # Upload response types (image, video, file)
+│   ├── ShareFileSettings.cs    # Strongly-typed file sharing settings
+│   ├── QrLoginEvent.cs         # QR login event data
 │   ├── User.cs                 # UserInfo, UserBasicInfo, UserSetting
 │   ├── GroupInfo.cs            # GroupFullInfo, GroupSetting, GroupTopic
 │   ├── ZBusiness.cs            # Business package
 │   └── Types/                  # Enums (6 files)
 ├── Utils/
 │   ├── ZaloUtils.cs            # 20+ utility functions
-│   ├── ApiMethods.cs           # API call helpers (GET/POST)
+│   ├── ApiMethods.cs           # API call helpers (GET/POST/encrypted)
 │   ├── ImageHelper.cs          # File metadata
 │   └── ZaloLogger.cs           # Logging
 └── WebSocket/
@@ -111,9 +119,10 @@ var api = await client.LoginAsync(new Credentials
 var api = await client.LoginWithQrAsync(qrPath: "qr.png");
 ```
 
-### 3. Gửi tin nhắn
+### 3. Gửi tin nhắn cơ bản
 
 ```csharp
+// Text đơn giản (string → MessageContent tự động cast)
 var result = await api.SendMessageAsync(
     threadId: "123456789",
     message: "Hello từ C#! 👋",
@@ -121,7 +130,91 @@ var result = await api.SendMessageAsync(
 );
 ```
 
-### 4. Lắng nghe sự kiện real-time (strongly-typed events)
+### 4. Gửi tin nhắn nâng cao (Mention, Quote, Style, Urgency)
+
+```csharp
+// Tạo message với đầy đủ tính năng
+var msg = new MessageContent
+{
+    Msg = "Xin chào @Minh, đây là tin nhắn quan trọng!",
+    
+    // Mention trong group (@user)
+    Mentions = new List<MessageMention>
+    {
+        new() { Pos = 9, Uid = "123456789", Len = 5 }
+    },
+    
+    // Text styles (Bold, Italic, Underline, Colors...)
+    Styles = new List<Style>
+    {
+        new(TextStyle.Bold, 0, 8),        // "Xin chào" in đậm
+        new(TextStyle.Red, 29, 18)        // "tin nhắn quan trọng" màu đỏ
+    },
+    
+    // Urgency
+    Urgency = Urgency.Important,
+    
+    // Time-to-live (ms)
+    Ttl = 60000
+};
+
+var result = await api.SendMessageAsync(msg, threadId, ThreadType.Group);
+```
+
+### 5. Gửi link (tự động parse metadata)
+
+```csharp
+var result = await api.SendLinkAsync(
+    threadId: "123456789",
+    link: "https://example.com",
+    msg: "Xem bài viết này!",
+    threadType: ThreadType.User
+);
+```
+
+### 6. Gửi video, voice, card
+
+```csharp
+// Video
+await api.SendVideoAsync(
+    threadId, videoUrl, thumbnailUrl,
+    msg: "Video hay!", duration: 120, width: 1920, height: 1080
+);
+
+// Voice
+await api.SendVoiceAsync(
+    threadId, voiceUrl, duration: 30, msg: "Tin nhắn thoại"
+);
+
+// Contact card
+await api.SendCardAsync(
+    threadId, userId: 123456789, msg: "Liên hệ của tôi"
+);
+```
+
+### 7. Upload ảnh/file và gửi
+
+```csharp
+// Upload file (jpg, png, webp, gif, mp4...)
+var uploadResults = await api.UploadAttachmentAsync(
+    new object[] { @"C:\path\to\image.jpg" },
+    threadId: "123456789",
+    type: ThreadType.User
+);
+
+// Gửi attachment đã upload
+if (uploadResults.Count > 0)
+{
+    var result = await api.SendAttachmentMessageAsync(
+        uploadResult: uploadResults[0],
+        threadId: "123456789",
+        message: "Ảnh đây!",
+        threadType: ThreadType.User
+    );
+}
+```
+
+### 8. Lắng nghe sự kiện real-time (strongly-typed events)
 
 ```csharp
 // === Messages ===
@@ -205,7 +298,7 @@ await api.Listener.StartAsync();
 await Task.Delay(-1);
 ```
 
-### 5. Pattern matching với typed events
+### 9. Pattern matching với typed events
 
 ```csharp
 // FriendEvent.Data và GroupEvent.Data là object
@@ -229,7 +322,7 @@ listener.GroupEventReceived += (_, e) =>
 };
 ```
 
-### 6. Gọi API + Deserialize
+### 10. Gọi API + Deserialize
 
 ```csharp
 // API trả về ZaloApiResponse<JsonElement>
@@ -269,15 +362,27 @@ if (response.IsSuccess)
 | AcceptRemind, RejectRemind | `GroupEventRemindRespondData` | `TopicId`, `UpdateMembers[]` |
 | RemindTopic | `GroupEventRemindTopicData` | `CreatorId`, `GroupId` |
 
+### MessageContent — Models cho gửi tin nhắn nâng cao:
+
+| Model | Mô tả |
+|---|---|
+| `TextStyle` | Enum: Bold, Italic, Underline, StrikeThrough, Red, Orange, Yellow, Green, Small, Big, UnorderedList, OrderedList, Indent |
+| `Style` | Style range (start, len, textStyle) |
+| `Urgency` | Default, Important, Urgent |
+| `MessageMention` | Mention (@user) với pos, uid, len |
+| `SendMessageQuote` | Quote (trả lời) với msgId, uidFrom, content... |
+| `MessageContent` | Full content: msg + styles + mentions + quote + urgency + ttl |
+
 ---
 
-## 📊 Danh sách API methods (~137)
+## 📊 Danh sách API methods (~150)
 
 | Nhóm | Số lượng | Ví dụ |
 |---|---|---|
 | **User/Profile** | 12 | `GetUserInfoAsync`, `FindUserAsync`, `UpdateProfileAsync` |
 | **Friends** | 19 | `GetAllFriendsAsync`, `SendFriendRequestAsync`, `BlockUserAsync` |
 | **Messages** | 16 | `SendMessageAsync`, `SendStickerAsync`, `AddReactionAsync` |
+| **Media & Files** | 6 | `SendLinkAsync`, `SendVideoAsync`, `SendVoiceAsync`, `SendCardAsync`, `UploadAttachmentAsync`, `SendAttachmentMessageAsync` |
 | **Groups** | 27 | `CreateGroupAsync`, `JoinGroupLinkAsync`, `ChangeGroupOwnerAsync` |
 | **Conversations** | 15 | `PinConversationsAsync`, `AddUnreadMarkAsync`, `DeleteChatAsync` |
 | **Stickers** | 4 | `GetStickersAsync`, `SearchStickerAsync` |
