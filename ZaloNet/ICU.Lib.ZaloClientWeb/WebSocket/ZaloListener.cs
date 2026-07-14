@@ -65,6 +65,15 @@ public class ZaloListener : IDisposable
     private CancellationTokenSource? _cts;
     private int _currentUrlIndex;
     private string? _cipherKey;
+    private int _id;
+    private bool _selfListen;
+    private int _retryCount;
+    private int _rotateCount;
+    private int _maxRetries;
+    private int[] _retryTimes;
+    private int[] _rotateErrorCodes;
+    private int[] _closeAndRetryCodes;
+    private int _pingInterval;
 
     private readonly ZaloLogger _logger;
 
@@ -88,6 +97,52 @@ public class ZaloListener : IDisposable
         _context = context;
         _httpClient = httpClient;
         _logger = new ZaloLogger(context.Options.Logging);
+        _selfListen = context.Options.SelfListen;
+        _id = 0;
+        _retryCount = 0;
+        _rotateCount = 0;
+        _maxRetries = 5;
+        _retryTimes = new[] { 1000, 2000, 5000, 10000, 30000 };
+        _rotateErrorCodes = Array.Empty<int>();
+        _closeAndRetryCodes = Array.Empty<int>();
+        _pingInterval = 30000;
+
+        // Parse socket settings from context when available
+        try
+        {
+            if (context.Settings.TryGetValue("features", out var featuresObj) && featuresObj is Dictionary<string, object> features)
+            {
+                if (features.TryGetValue("socket", out var sockObj) && sockObj is Dictionary<string, object> socket)
+                {
+                    if (socket.TryGetValue("ping_interval", out var pingVal))
+                        _pingInterval = Convert.ToInt32(pingVal);
+
+                    if (socket.TryGetValue("retries", out var retriesObj) && retriesObj is Dictionary<string, object> retries)
+                    {
+                        foreach (var kvp in retries)
+                        {
+                            if (kvp.Value is Dictionary<string, object> r)
+                            {
+                                if (r.TryGetValue("max", out var max))
+                                    _maxRetries = Convert.ToInt32(max);
+                                if (r.TryGetValue("times", out var times))
+                                {
+                                    if (times is JsonElement je && je.ValueKind == JsonValueKind.Array)
+                                        _retryTimes = je.EnumerateArray().Select(x => x.GetInt32()).ToArray();
+                                }
+                            }
+                        }
+                    }
+
+                    if (socket.TryGetValue("close_and_retry_codes", out var closeCodes) && closeCodes is JsonElement cje && cje.ValueKind == JsonValueKind.Array)
+                        _closeAndRetryCodes = cje.EnumerateArray().Select(x => x.GetInt32()).ToArray();
+
+                    if (socket.TryGetValue("rotate_error_codes", out var rotCodes) && rotCodes is JsonElement rje && rje.ValueKind == JsonValueKind.Array)
+                        _rotateErrorCodes = rje.EnumerateArray().Select(x => x.GetInt32()).ToArray();
+                }
+            }
+        }
+        catch { /* best-effort */ }
     }
 
     public async Task StartAsync(bool retryOnClose = false)
@@ -722,6 +777,102 @@ public class ZaloListener : IDisposable
         if (url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             url = "wss://" + url.Substring(8);
         return ZaloUtils.MakeUrl(url, new Dictionary<string, string> { ["t"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() });
+    }
+
+    /// <summary>
+    /// Sends a WebSocket payload with optional auto-incrementing request ID.
+    /// Equivalent to sendWs() in zca-js listen.ts.
+    /// </summary>
+    /// <param name="version">Protocol version.</param>
+    /// <param name="cmd">Command code.</param>
+    /// <param name="subCmd">Sub-command code.</param>
+    /// <param name="data">Payload data object.</param>
+    /// <param name="requireId">If true, adds a "req_id" field to the data.</param>
+    public async Task SendWsAsync(byte version, ushort cmd, byte subCmd, Dictionary<string, object> data, bool requireId = true)
+    {
+        if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+            return;
+
+        if (requireId)
+            data["req_id"] = $"req_{_id++}";
+
+        var json = JsonSerializer.Serialize(data);
+        var jsonBytes = Encoding.UTF8.GetBytes(json);
+
+        var header = new byte[4 + jsonBytes.Length];
+        header[0] = version;
+        header[1] = (byte)(cmd & 0xFF);
+        header[2] = (byte)((cmd >> 8) & 0xFF);
+        header[3] = subCmd;
+        Array.Copy(jsonBytes, 0, header, 4, jsonBytes.Length);
+
+        await _webSocket.SendAsync(new ArraySegment<byte>(header), WebSocketMessageType.Binary, true, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Request old messages from a thread.
+    /// Equivalent to requestOldMessages() in zca-js.
+    /// </summary>
+    /// <param name="threadType">ThreadType.User or ThreadType.Group.</param>
+    /// <param name="lastMsgId">Optional last message ID for pagination.</param>
+    public async Task RequestOldMessages(ThreadType threadType, string? lastMsgId = null)
+    {
+        var data = new Dictionary<string, object>
+        {
+            ["first"] = true,
+            ["lastId"] = lastMsgId ?? "",
+            ["preIds"] = Array.Empty<object>(),
+        };
+
+        await SendWsAsync(1, threadType == ThreadType.User ? (ushort)510 : (ushort)511, 1, data);
+    }
+
+    /// <summary>
+    /// Request old reactions from a thread.
+    /// Equivalent to requestOldReactions() in zca-js.
+    /// </summary>
+    /// <param name="threadType">ThreadType.User or ThreadType.Group.</param>
+    /// <param name="lastMsgId">Optional last message ID for pagination.</param>
+    public async Task RequestOldReactions(ThreadType threadType, string? lastMsgId = null)
+    {
+        var data = new Dictionary<string, object>
+        {
+            ["first"] = true,
+            ["lastId"] = lastMsgId ?? "",
+            ["preIds"] = Array.Empty<object>(),
+        };
+
+        await SendWsAsync(1, threadType == ThreadType.User ? (ushort)610 : (ushort)611, 1, data);
+    }
+
+    /// <summary>
+    /// Checks if the given close code allows retry with configured delay.
+    /// </summary>
+    private int? CanRetry(int closeCode)
+    {
+        if (_closeAndRetryCodes.Length > 0 && !_closeAndRetryCodes.Contains(closeCode))
+            return null;
+        if (_retryCount >= _maxRetries)
+            return null;
+
+        var idx = Math.Min(_retryCount, _retryTimes.Length - 1);
+        var retryDelay = _retryTimes[Math.Max(0, idx)];
+        _retryCount++;
+        _logger.Verbose($"Retry for code {closeCode} in {retryDelay}ms ({_retryCount}/{_maxRetries})");
+        return retryDelay;
+    }
+
+    /// <summary>
+    /// Checks if the given close code should trigger endpoint rotation.
+    /// </summary>
+    private bool ShouldRotate(int closeCode)
+    {
+        if (_rotateErrorCodes.Length > 0 && !_rotateErrorCodes.Contains(closeCode))
+            return false;
+        var urls = _context.ZpwWsUrls ?? Array.Empty<string>();
+        if (_rotateCount >= urls.Length - 1)
+            return false;
+        return true;
     }
 
     public void Dispose()

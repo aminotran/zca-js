@@ -111,10 +111,22 @@ public class GroupCurrentMember
     public string ZaloName { get; set; } = string.Empty;
     /// <summary>Avatar URL.</summary>
     public string Avatar { get; set; } = string.Empty;
+    /// <summary>25px avatar thumbnail URL. Equivalent to avatar_25 in zca-js.</summary>
+    public string Avatar25 { get; set; } = string.Empty;
     /// <summary>Account status: 0=normal, other=restricted.</summary>
     public int AccountStatus { get; set; }
     /// <summary>Member type: 0=member, 1=deputy, 2=owner.</summary>
     public int Type { get; set; }
+}
+
+/// <summary>
+/// Extra info for a group (media store flag).
+/// Equivalent to GroupInfo.extraInfo in zca-js.
+/// </summary>
+public class GroupExtraInfo
+{
+    /// <summary>Enable media store? 0=disabled, 1=enabled.</summary>
+    public int EnableMediaStore { get; set; }
 }
 
 /// <summary>
@@ -145,6 +157,10 @@ public class GroupFullInfo
     public List<string> AdminIds { get; set; } = new();
     /// <summary>Current members with details.</summary>
     public List<GroupCurrentMember> CurrentMems { get; set; } = new();
+    /// <summary>Updated members (changes since last fetch). Equivalent to updateMems in zca-js.</summary>
+    public List<object> UpdateMems { get; set; } = new();
+    /// <summary>Admin list with details. Equivalent to admins in zca-js.</summary>
+    public List<object> Admins { get; set; } = new();
     /// <summary>Are there more members not included? 0 = no, 1 = yes.</summary>
     public int HasMoreMember { get; set; }
     /// <summary>Group sub-type.</summary>
@@ -163,4 +179,6 @@ public class GroupFullInfo
     public string GlobalId { get; set; } = string.Empty;
     /// <summary>End-to-end encryption enabled? 0 = disabled, 1 = enabled.</summary>
     public int E2ee { get; set; }
+    /// <summary>Extra information (media store flags, etc.). Equivalent to extraInfo in zca-js.</summary>
+    public GroupExtraInfo? ExtraInfo { get; set; }
 }

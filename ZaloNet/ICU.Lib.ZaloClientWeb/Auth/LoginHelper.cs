@@ -269,12 +269,20 @@ public class LoginHelper
 
             var serverInfo = JsonSerializer.Deserialize<ServerInfoResponse>(dataEl.GetRawText());
 
+            ExtraVerInfo? extraVerObj = null;
+            if (serverInfo?.ExtraVer != null)
+            {
+                try { extraVerObj = JsonSerializer.Deserialize<ExtraVerInfo>(serverInfo.ExtraVer); }
+                catch { /* best-effort */ }
+            }
+
             return new ServerInfoData
             {
                 Settings = serverInfo != null
                     ? JsonSerializer.Deserialize<Dictionary<string, object>>(serverInfo.Settings?.GetRawText() ?? "{}")
                     : new Dictionary<string, object>(),
-                ExtraVer = serverInfo?.ExtraVer
+                ExtraVer = extraVerObj,
+                ExtraVerStr = serverInfo?.ExtraVer
             };
         }
         catch (HttpRequestException ex)
@@ -411,6 +419,7 @@ public class LoginHelper
     internal class ServerInfoData
     {
         public Dictionary<string, object> Settings { get; set; } = new();
-        public string? ExtraVer { get; set; }
+        public string? ExtraVerStr { get; set; }
+        public ExtraVerInfo? ExtraVer { get; set; }
     }
 }

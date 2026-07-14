@@ -124,6 +124,24 @@ public static class ZaloUtils
     }
 
     /// <summary>
+    /// Gets the file extension from a file path (without the dot).
+    /// Equivalent to getFileExtension() in zca-js.
+    /// </summary>
+    public static string GetFileExtension(string filePath)
+    {
+        return System.IO.Path.GetExtension(filePath).TrimStart('.');
+    }
+
+    /// <summary>
+    /// Gets the file name from a file path.
+    /// Equivalent to getFileName() in zca-js.
+    /// </summary>
+    public static string GetFileName(string filePath)
+    {
+        return System.IO.Path.GetFileName(filePath);
+    }
+
+    /// <summary>
     /// Converts hex color to negative color number used by Zalo API.
     /// Equivalent to hexToNegativeColor() in zca-js.
     /// </summary>
