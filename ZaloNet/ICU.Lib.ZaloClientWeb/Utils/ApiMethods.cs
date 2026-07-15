@@ -13,6 +13,7 @@ using ICU.Lib.ZaloClientWeb.Models;
 
 namespace ICU.Lib.ZaloClientWeb.Utils;
 
+[Obsolete("Use ZaloApiClient instead, which supports DI and eliminates redundant parameter passing.")]
 public static class ApiMethods
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()

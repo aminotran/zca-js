@@ -190,6 +190,7 @@ public class ZaloApi
 {
     private readonly ZaloContext _context;
     private readonly HttpClient _httpClient;
+    private readonly ZaloApiClient _apiClient;
     internal ZaloContext Context => _context;
     internal HttpClient HttpClient => _httpClient;
 
@@ -202,7 +203,23 @@ public class ZaloApi
     {
         _context = context;
         _httpClient = httpClient;
+        _apiClient = new ZaloApiClient(context, httpClient);
     }
+
+    /// <summary>
+    /// Initializes a new instance with a pre-configured <see cref="ZaloApiClient"/> for DI support.
+    /// </summary>
+    internal ZaloApi(ZaloApiClient apiClient)
+    {
+        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _context = apiClient.Context;
+        _httpClient = apiClient.HttpClient;
+    }
+
+    /// <summary>
+    /// Gets the underlying <see cref="ZaloApiClient"/> for direct API access.
+    /// </summary>
+    public ZaloApiClient ApiClient => _apiClient;
 
     public WebSocket.ZaloListener Listener
     {
@@ -218,43 +235,43 @@ public class ZaloApi
     private string GetImei() => _context.Imei;
 
     // ─── Profile APIs ────────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> GetUserInfoAsync(long userId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getUserInfo", new { userId });
-    public Task<ZaloApiResponse<JsonElement>> FindUserAsync(string phoneNumber) => ApiMethods.CallGetApiAsync(_context, _httpClient, "findUser", new { phoneNumber });
-    public Task<ZaloApiResponse<JsonElement>> FindUserByUsernameAsync(string username) => ApiMethods.CallGetApiAsync(_context, _httpClient, "findUserByUsername", new { username });
-    public Task<ZaloApiResponse<JsonElement>> GetAccountInfoAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "fetchAccountInfo");
+    public Task<ZaloApiResponse<JsonElement>> GetUserInfoAsync(long userId) => _apiClient.CallGetApiAsync("getUserInfo", new { userId });
+    public Task<ZaloApiResponse<JsonElement>> FindUserAsync(string phoneNumber) => _apiClient.CallGetApiAsync("findUser", new { phoneNumber });
+    public Task<ZaloApiResponse<JsonElement>> FindUserByUsernameAsync(string username) => _apiClient.CallGetApiAsync("findUserByUsername", new { username });
+    public Task<ZaloApiResponse<JsonElement>> GetAccountInfoAsync() => _apiClient.CallGetApiAsync("fetchAccountInfo");
     public long GetOwnId() => _context.Uid;
     public Task<ZaloApiResponse<long>> GetOwnIdAsync() => Task.FromResult(new ZaloApiResponse<long> { Data = _context.Uid });
-    public Task<ZaloApiResponse<JsonElement>> UpdateProfileAsync(object profileData) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateProfile", profileData);
-    public Task<ZaloApiResponse<JsonElement>> UpdateProfileBioAsync(string bio) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateProfileBio", new { bio });
-    public Task<ZaloApiResponse<JsonElement>> ChangeAccountAvatarAsync(string imagePath) => ApiMethods.CallPostApiAsync(_context, _httpClient, "changeAccountAvatar", new { imagePath });
-    public Task<ZaloApiResponse<JsonElement>> GetAvatarListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAvatarList");
-    public Task<ZaloApiResponse<JsonElement>> GetFullAvatarAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getFullAvatar");
-    public Task<ZaloApiResponse<JsonElement>> DeleteAvatarAsync(long avatarId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "deleteAvatar", new { avatarId });
-    public Task<ZaloApiResponse<JsonElement>> ReuseAvatarAsync(long avatarId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "reuseAvatar", new { avatarId });
-    public Task<ZaloApiResponse<JsonElement>> GetAvatarUrlProfileAsync(long userId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAvatarUrlProfile", new { userId });
+    public Task<ZaloApiResponse<JsonElement>> UpdateProfileAsync(object profileData) => _apiClient.CallPostApiAsync("updateProfile", profileData);
+    public Task<ZaloApiResponse<JsonElement>> UpdateProfileBioAsync(string bio) => _apiClient.CallPostApiAsync("updateProfileBio", new { bio });
+    public Task<ZaloApiResponse<JsonElement>> ChangeAccountAvatarAsync(string imagePath) => _apiClient.CallPostApiAsync("changeAccountAvatar", new { imagePath });
+    public Task<ZaloApiResponse<JsonElement>> GetAvatarListAsync() => _apiClient.CallGetApiAsync("getAvatarList");
+    public Task<ZaloApiResponse<JsonElement>> GetFullAvatarAsync() => _apiClient.CallGetApiAsync("getFullAvatar");
+    public Task<ZaloApiResponse<JsonElement>> DeleteAvatarAsync(long avatarId) => _apiClient.CallPostApiAsync("deleteAvatar", new { avatarId });
+    public Task<ZaloApiResponse<JsonElement>> ReuseAvatarAsync(long avatarId) => _apiClient.CallPostApiAsync("reuseAvatar", new { avatarId });
+    public Task<ZaloApiResponse<JsonElement>> GetAvatarUrlProfileAsync(long userId) => _apiClient.CallGetApiAsync("getAvatarUrlProfile", new { userId });
 
     // ─── Friend APIs (all encrypted POST) ─────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> GetAllFriendsAsync() => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getAllFriends", new { incInvalid = 1, page = 1, count = 20000, avatar_size = 120, actiontime = 0, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> GetFriendRequestStatusAsync(long friendId) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getFriendRequestStatus", new { fid = friendId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> SendFriendRequestAsync(long userId, string? message = null) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendFriendRequest", new { userId, imei = GetImei(), msg = message ?? "" });
-    public Task<ZaloApiResponse<JsonElement>> AcceptFriendRequestAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "acceptFriendRequest", new { fid = userId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> RejectFriendRequestAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "rejectFriendRequest", new { fid = userId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> RemoveFriendAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "removeFriend", new { fid = userId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> UndoFriendRequestAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "undoFriendRequest", new { fid = userId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> BlockUserAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "blockUser", new { fid = userId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> UnblockUserAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "unblockUser", new { fid = userId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> BlockViewFeedAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "blockViewFeed", new { fid = userId, imei = GetImei(), blockType = 1 });
-    public Task<ZaloApiResponse<JsonElement>> GetFriendBoardListAsync(long userId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getFriendBoardList", new { userId });
-    public Task<ZaloApiResponse<JsonElement>> GetFriendOnlinesAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getFriendOnlines");
-    public Task<ZaloApiResponse<JsonElement>> GetFriendRecommendationsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getFriendRecommendations");
-    public Task<ZaloApiResponse<JsonElement>> ChangeFriendAliasAsync(long userId, string alias) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "changeFriendAlias", new { userId, alias, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> RemoveFriendAliasAsync(long userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "removeFriendAlias", new { userId, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> GetSentFriendRequestAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getSentFriendRequest");
-    public Task<ZaloApiResponse<JsonElement>> GetCloseFriendsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getCloseFriends");
-    public Task<ZaloApiResponse<JsonElement>> GetAliasListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAliasList");
-    public Task<ZaloApiResponse<JsonElement>> GetRelatedFriendGroupAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getRelatedFriendGroup");
-    public Task<ZaloApiResponse<JsonElement>> GetMultiUsersByPhonesAsync(List<string> phones) => ApiMethods.CallPostApiAsync(_context, _httpClient, "getMultiUsersByPhones", new { phones });
-    public Task<ZaloApiResponse<JsonElement>> InviteUserToGroupsAsync(long userId, List<string> groupIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "inviteUserToGroups", new { userId, groupIds });
+    public Task<ZaloApiResponse<JsonElement>> GetAllFriendsAsync() => _apiClient.CallEncryptedGetApiAsync("getAllFriends", new { incInvalid = 1, page = 1, count = 20000, avatar_size = 120, actiontime = 0, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> GetFriendRequestStatusAsync(long friendId) => _apiClient.CallEncryptedGetApiAsync("getFriendRequestStatus", new { fid = friendId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> SendFriendRequestAsync(long userId, string? message = null) => _apiClient.CallEncryptedPostApiAsync("sendFriendRequest", new { userId, imei = GetImei(), msg = message ?? "" });
+    public Task<ZaloApiResponse<JsonElement>> AcceptFriendRequestAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("acceptFriendRequest", new { fid = userId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> RejectFriendRequestAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("rejectFriendRequest", new { fid = userId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> RemoveFriendAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("removeFriend", new { fid = userId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> UndoFriendRequestAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("undoFriendRequest", new { fid = userId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> BlockUserAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("blockUser", new { fid = userId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> UnblockUserAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("unblockUser", new { fid = userId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> BlockViewFeedAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("blockViewFeed", new { fid = userId, imei = GetImei(), blockType = 1 });
+    public Task<ZaloApiResponse<JsonElement>> GetFriendBoardListAsync(long userId) => _apiClient.CallGetApiAsync("getFriendBoardList", new { userId });
+    public Task<ZaloApiResponse<JsonElement>> GetFriendOnlinesAsync() => _apiClient.CallGetApiAsync("getFriendOnlines");
+    public Task<ZaloApiResponse<JsonElement>> GetFriendRecommendationsAsync() => _apiClient.CallGetApiAsync("getFriendRecommendations");
+    public Task<ZaloApiResponse<JsonElement>> ChangeFriendAliasAsync(long userId, string alias) => _apiClient.CallEncryptedPostApiAsync("changeFriendAlias", new { userId, alias, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> RemoveFriendAliasAsync(long userId) => _apiClient.CallEncryptedPostApiAsync("removeFriendAlias", new { userId, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> GetSentFriendRequestAsync() => _apiClient.CallGetApiAsync("getSentFriendRequest");
+    public Task<ZaloApiResponse<JsonElement>> GetCloseFriendsAsync() => _apiClient.CallGetApiAsync("getCloseFriends");
+    public Task<ZaloApiResponse<JsonElement>> GetAliasListAsync() => _apiClient.CallGetApiAsync("getAliasList");
+    public Task<ZaloApiResponse<JsonElement>> GetRelatedFriendGroupAsync() => _apiClient.CallGetApiAsync("getRelatedFriendGroup");
+    public Task<ZaloApiResponse<JsonElement>> GetMultiUsersByPhonesAsync(List<string> phones) => _apiClient.CallPostApiAsync("getMultiUsersByPhones", new { phones });
+    public Task<ZaloApiResponse<JsonElement>> InviteUserToGroupsAsync(long userId, List<string> groupIds) => _apiClient.CallPostApiAsync("inviteUserToGroups", new { userId, groupIds });
 
     // ─── Message APIs (all encrypted POST) ────────────────────────────────
     public async Task<ZaloApiResponse<JsonElement>> SendMessageAsync(MessageContent message, string threadId, ThreadType threadType = ThreadType.User)
@@ -331,12 +348,12 @@ public class ZaloApi
                 {
                     AddQuoteParams(textParams, message.Quote!, isGroup);
                     var qEndpoint = isGroup ? "sendMessageGroupQuote" : "sendMessageQuote";
-                    textResult = await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, qEndpoint, textParams);
+                    textResult = await _apiClient.CallEncryptedPostApiAsync(qEndpoint, textParams);
                 }
                 else
                 {
                     var textEndpoint = isGroup ? (mentionInfo != null ? "sendMessageGroupMention" : "sendMessageGroup") : "sendMessage";
-                    textResult = await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, textEndpoint, textParams);
+                    textResult = await _apiClient.CallEncryptedPostApiAsync(textEndpoint, textParams);
                 }
             }
 
@@ -415,9 +432,9 @@ public class ZaloApi
         {
             AddQuoteParams(paramsDict, message.Quote, isGroup);
             if (isGroup)
-                return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessageGroupQuote", paramsDict);
+                return await _apiClient.CallEncryptedPostApiAsync("sendMessageGroupQuote", paramsDict);
             else
-                return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendMessageQuote", paramsDict);
+                return await _apiClient.CallEncryptedPostApiAsync("sendMessageQuote", paramsDict);
         }
 
         // Select endpoint
@@ -427,7 +444,7 @@ public class ZaloApi
         else
             endpoint = "sendMessage";
 
-        return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, endpoint, paramsDict);
+        return await _apiClient.CallEncryptedPostApiAsync(endpoint, paramsDict);
     }
 
     private void AddQuoteParams(Dictionary<string, object?> dict, SendMessageQuote quote, bool isGroup)
@@ -489,10 +506,10 @@ public class ZaloApi
     {
         var ts = GetTimestamp();
         if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendStickerGroup",
+            return _apiClient.CallEncryptedPostApiAsync("sendStickerGroup",
                 new { stickerId, cateId = stickerCategoryId, type, clientId = ts, ttl = 0, zsource = 101, grid = threadId, visibility = 0 });
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendSticker",
+            return _apiClient.CallEncryptedPostApiAsync("sendSticker",
                 new { stickerId, cateId = stickerCategoryId, type, clientId = ts, ttl = 0, zsource = 101, toid = threadId, imei = GetImei() });
     }
 
@@ -530,14 +547,14 @@ public class ZaloApi
 
         var finalMsg = !string.IsNullOrEmpty(msg) ? (msg!.Contains(link) ? msg : msg + " " + link) : link;
         if (threadType == ThreadType.Group)
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendLinkGroup",
+            return await _apiClient.CallEncryptedPostApiAsync("sendLinkGroup",
                 new { msg = finalMsg, href, src, title, desc, thumb, type = 2, media, ttl = 0, clientId = ts, grid = threadId, imei = GetImei() });
         else
         {
             var sendParams = new { msg = finalMsg, href, src, title, desc, thumb, type = 2, media, ttl = 0, clientId = ts, toId = threadId, mentionInfo = "" };
             Console.Error.WriteLine($"[SENDLINK] raw JSON: {System.Text.Json.JsonSerializer.Serialize(sendParams, _jsonOptions)}");
             Console.Error.WriteLine($"[SENDLINK] href={href} src={src} title={title} desc={desc} thumb={thumb} media={media}");
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendLink", sendParams);
+            return await _apiClient.CallEncryptedPostApiAsync("sendLink", sendParams);
         }
     }
 
@@ -577,10 +594,10 @@ public class ZaloApi
         }, _jsonOptions);
 
         if (threadType == ThreadType.Group)
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVideoGroup",
+            return await _apiClient.CallEncryptedPostApiAsync("sendVideoGroup",
                 new { grid = threadId, visibility = 0, clientId = ts.ToString(), ttl = 0, zsource = 704, msgType = 5, msgInfo, imei = GetImei() });
         else
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVideo",
+            return await _apiClient.CallEncryptedPostApiAsync("sendVideo",
                 new { toId = threadId, clientId = ts.ToString(), ttl = 0, zsource = 704, msgType = 5, msgInfo, imei = GetImei() });
     }
 
@@ -610,10 +627,10 @@ public class ZaloApi
         }, _jsonOptions);
 
         if (threadType == ThreadType.Group)
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVoiceGroup",
+            return await _apiClient.CallEncryptedPostApiAsync("sendVoiceGroup",
                 new { grid = threadId, visibility = 0, clientId = ts.ToString(), ttl = 0, zsource = -1, msgType = 3, msgInfo, imei = GetImei() });
         else
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendVoice",
+            return await _apiClient.CallEncryptedPostApiAsync("sendVoice",
                 new { toId = threadId, clientId = ts.ToString(), ttl = 0, zsource = -1, msgType = 3, msgInfo, imei = GetImei() });
     }
 
@@ -634,13 +651,13 @@ public class ZaloApi
             ["qrCodeUrl"] = qrCodeUrl,
         }, _jsonOptions);
         if (threadType == ThreadType.Group)
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendCardGroup",
+            return await _apiClient.CallEncryptedPostApiAsync("sendCardGroup",
                 new { ttl = 0, msgType = 6, clientId, msgInfo, visibility = 0, grid = threadId });
         else
-            return await ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendCard",
+            return await _apiClient.CallEncryptedPostApiAsync("sendCard",
                 new { ttl = 0, msgType = 6, clientId, msgInfo, toId = threadId, imei = GetImei() });
     }
-    public Task<ZaloApiResponse<JsonElement>> SendBankCardAsync(string threadId, object cardData, ThreadType threadType = ThreadType.User) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendBankCard", new { threadId, cardData, threadType });
+    public Task<ZaloApiResponse<JsonElement>> SendBankCardAsync(string threadId, object cardData, ThreadType threadType = ThreadType.User) => _apiClient.CallEncryptedPostApiAsync("sendBankCard", new { threadId, cardData, threadType });
 
     /// <summary>
     /// Forward message to a thread.
@@ -750,10 +767,10 @@ public class ZaloApi
         var ts = GetTimestamp();
         var endpoint = isGroup ? "deleteMessageGroup" : "deleteMessage";
         if (isGroup)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, endpoint,
+            return _apiClient.CallEncryptedPostApiAsync(endpoint,
                 new { grid = "", cliMsgId = ts, msgs = new[] { new { cliMsgId = "0", globalMsgId = messageId, ownerId, destId = "" } }, onlyMe = onlyMe ? 1 : 0 });
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, endpoint,
+            return _apiClient.CallEncryptedPostApiAsync(endpoint,
                 new { toid = "", cliMsgId = ts, msgs = new[] { new { cliMsgId = "0", globalMsgId = messageId, ownerId, destId = "" } }, onlyMe = onlyMe ? 1 : 0, imei = GetImei() });
     }
 
@@ -761,10 +778,10 @@ public class ZaloApi
     {
         var ts = GetTimestamp();
         if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "undo",
+            return _apiClient.CallEncryptedPostApiAsync("undo",
                 new { msgId = messageId, clientId = ts, cliMsgId = "0", uidFrom = ownerId, idTo = "" });
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "undo",
+            return _apiClient.CallEncryptedPostApiAsync("undo",
                 new { msgId = messageId, clientId = ts, cliMsgId = "0", uidFrom = ownerId, idTo = "" });
     }
 
@@ -772,10 +789,10 @@ public class ZaloApi
     {
         var ts = GetTimestamp();
         if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendTypingEventGroup",
+            return _apiClient.CallEncryptedPostApiAsync("sendTypingEventGroup",
                 new { msgType = 1, clientId = ts, uid = _context.Uid.ToString(), threadId, isGroup = 1 });
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendTypingEvent",
+            return _apiClient.CallEncryptedPostApiAsync("sendTypingEvent",
                 new { msgType = 1, clientId = ts, uid = _context.Uid.ToString(), threadId, isGroup = 0 });
     }
 
@@ -783,10 +800,10 @@ public class ZaloApi
     {
         var ts = GetTimestamp();
         if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendSeenEventGroup",
+            return _apiClient.CallEncryptedPostApiAsync("sendSeenEventGroup",
                 new { messageId, clientId = ts, grid = threadId, visibility = 0 });
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendSeenEvent",
+            return _apiClient.CallEncryptedPostApiAsync("sendSeenEvent",
                 new { messageId, clientId = ts, toid = threadId, imei = GetImei() });
     }
 
@@ -794,17 +811,17 @@ public class ZaloApi
     {
         var ts = GetTimestamp();
         if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendDeliveredEventGroup",
+            return _apiClient.CallEncryptedPostApiAsync("sendDeliveredEventGroup",
                 new { messageId, clientId = ts, grid = threadId, visibility = 0 });
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendDeliveredEvent",
+            return _apiClient.CallEncryptedPostApiAsync("sendDeliveredEvent",
                 new { messageId, clientId = ts, toid = threadId, imei = GetImei() });
     }
 
     public Task<ZaloApiResponse<JsonElement>> AddReactionAsync(string messageId, string reactionIcon, ThreadType threadType = ThreadType.User)
     {
         var ts = GetTimestamp();
-        return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "addReaction",
+        return _apiClient.CallEncryptedPostApiAsync("addReaction",
             new { react_list = new[] { new { msgId = messageId, reactIcon = reactionIcon, reactType = 0 } }, clientId = ts, imei = GetImei() });
     }
 
@@ -1289,36 +1306,36 @@ public class ZaloApi
     };
 
     // ─── Group APIs ──────────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> CreateGroupAsync(string name, List<long> memberIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createGroup", new { name, memberIds });
-    public Task<ZaloApiResponse<JsonElement>> GetAllGroupsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAllGroups");
-    public Task<ZaloApiResponse<JsonElement>> GetGroupInfoAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupInfo", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> GetGroupMembersInfoAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupMembersInfo", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> GetGroupChatHistoryAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupChatHistory", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> AddUserToGroupAsync(string groupId, long userId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "addUserToGroup", new { groupId, userId });
-    public Task<ZaloApiResponse<JsonElement>> RemoveUserFromGroupAsync(string groupId, long userId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "removeUserFromGroup", new { groupId, userId });
-    public Task<ZaloApiResponse<JsonElement>> LeaveGroupAsync(string groupId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "leaveGroup", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> ChangeGroupNameAsync(string groupId, string name) => ApiMethods.CallPostApiAsync(_context, _httpClient, "changeGroupName", new { groupId, name });
-    public Task<ZaloApiResponse<JsonElement>> ChangeGroupAvatarAsync(string groupId, string imagePath) => ApiMethods.CallPostApiAsync(_context, _httpClient, "changeGroupAvatar", new { groupId, imagePath });
-    public Task<ZaloApiResponse<JsonElement>> ChangeGroupOwnerAsync(string groupId, long newOwnerId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "changeGroupOwner", new { groupId, newOwnerId });
-    public Task<ZaloApiResponse<JsonElement>> AddGroupDeputyAsync(string groupId, long userId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "addGroupDeputy", new { groupId, userId });
-    public Task<ZaloApiResponse<JsonElement>> RemoveGroupDeputyAsync(string groupId, long userId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "removeGroupDeputy", new { groupId, userId });
-    public Task<ZaloApiResponse<JsonElement>> AddGroupBlockedMemberAsync(string groupId, long userId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "addGroupBlockedMember", new { groupId, userId });
-    public Task<ZaloApiResponse<JsonElement>> RemoveGroupBlockedMemberAsync(string groupId, long userId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "removeGroupBlockedMember", new { groupId, userId });
-    public Task<ZaloApiResponse<JsonElement>> GetGroupBlockedMemberAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupBlockedMember", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> DisperseGroupAsync(string groupId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "disperseGroup", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> EnableGroupLinkAsync(string groupId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "enableGroupLink", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> DisableGroupLinkAsync(string groupId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "disableGroupLink", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> GetGroupLinkInfoAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupLinkInfo", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> GetGroupLinkDetailAsync(string groupCode) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupLinkDetail", new { groupCode });
-    public Task<ZaloApiResponse<JsonElement>> JoinGroupLinkAsync(string groupCode) => ApiMethods.CallPostApiAsync(_context, _httpClient, "joinGroupLink", new { groupCode });
-    public Task<ZaloApiResponse<JsonElement>> UpdateGroupSettingsAsync(string groupId, object settings) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateGroupSettings", new { groupId, settings });
-    public Task<ZaloApiResponse<JsonElement>> GetPendingGroupMembersAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getPendingGroupMembers", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> ReviewPendingMemberRequestAsync(string groupId, long userId, bool approve) => ApiMethods.CallPostApiAsync(_context, _httpClient, "reviewPendingMemberRequest", new { groupId, userId, approve });
-    public Task<ZaloApiResponse<JsonElement>> GetGroupInviteBoxInfoAsync(string code) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupInviteBoxInfo", new { code });
-    public Task<ZaloApiResponse<JsonElement>> GetGroupInviteBoxListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getGroupInviteBoxList");
-    public Task<ZaloApiResponse<JsonElement>> JoinGroupInviteBoxAsync(string code) => ApiMethods.CallPostApiAsync(_context, _httpClient, "joinGroupInviteBox", new { code });
-    public Task<ZaloApiResponse<JsonElement>> DeleteGroupInviteBoxAsync(string code) => ApiMethods.CallPostApiAsync(_context, _httpClient, "deleteGroupInviteBox", new { code });
-    public Task<ZaloApiResponse<JsonElement>> UpgradeGroupToCommunityAsync(string groupId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "upgradeGroupToCommunity", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> CreateGroupAsync(string name, List<long> memberIds) => _apiClient.CallPostApiAsync("createGroup", new { name, memberIds });
+    public Task<ZaloApiResponse<JsonElement>> GetAllGroupsAsync() => _apiClient.CallGetApiAsync("getAllGroups");
+    public Task<ZaloApiResponse<JsonElement>> GetGroupInfoAsync(string groupId) => _apiClient.CallGetApiAsync("getGroupInfo", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> GetGroupMembersInfoAsync(string groupId) => _apiClient.CallGetApiAsync("getGroupMembersInfo", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> GetGroupChatHistoryAsync(string groupId) => _apiClient.CallGetApiAsync("getGroupChatHistory", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> AddUserToGroupAsync(string groupId, long userId) => _apiClient.CallPostApiAsync("addUserToGroup", new { groupId, userId });
+    public Task<ZaloApiResponse<JsonElement>> RemoveUserFromGroupAsync(string groupId, long userId) => _apiClient.CallPostApiAsync("removeUserFromGroup", new { groupId, userId });
+    public Task<ZaloApiResponse<JsonElement>> LeaveGroupAsync(string groupId) => _apiClient.CallPostApiAsync("leaveGroup", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> ChangeGroupNameAsync(string groupId, string name) => _apiClient.CallPostApiAsync("changeGroupName", new { groupId, name });
+    public Task<ZaloApiResponse<JsonElement>> ChangeGroupAvatarAsync(string groupId, string imagePath) => _apiClient.CallPostApiAsync("changeGroupAvatar", new { groupId, imagePath });
+    public Task<ZaloApiResponse<JsonElement>> ChangeGroupOwnerAsync(string groupId, long newOwnerId) => _apiClient.CallPostApiAsync("changeGroupOwner", new { groupId, newOwnerId });
+    public Task<ZaloApiResponse<JsonElement>> AddGroupDeputyAsync(string groupId, long userId) => _apiClient.CallPostApiAsync("addGroupDeputy", new { groupId, userId });
+    public Task<ZaloApiResponse<JsonElement>> RemoveGroupDeputyAsync(string groupId, long userId) => _apiClient.CallPostApiAsync("removeGroupDeputy", new { groupId, userId });
+    public Task<ZaloApiResponse<JsonElement>> AddGroupBlockedMemberAsync(string groupId, long userId) => _apiClient.CallPostApiAsync("addGroupBlockedMember", new { groupId, userId });
+    public Task<ZaloApiResponse<JsonElement>> RemoveGroupBlockedMemberAsync(string groupId, long userId) => _apiClient.CallPostApiAsync("removeGroupBlockedMember", new { groupId, userId });
+    public Task<ZaloApiResponse<JsonElement>> GetGroupBlockedMemberAsync(string groupId) => _apiClient.CallGetApiAsync("getGroupBlockedMember", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> DisperseGroupAsync(string groupId) => _apiClient.CallPostApiAsync("disperseGroup", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> EnableGroupLinkAsync(string groupId) => _apiClient.CallPostApiAsync("enableGroupLink", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> DisableGroupLinkAsync(string groupId) => _apiClient.CallPostApiAsync("disableGroupLink", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> GetGroupLinkInfoAsync(string groupId) => _apiClient.CallGetApiAsync("getGroupLinkInfo", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> GetGroupLinkDetailAsync(string groupCode) => _apiClient.CallGetApiAsync("getGroupLinkDetail", new { groupCode });
+    public Task<ZaloApiResponse<JsonElement>> JoinGroupLinkAsync(string groupCode) => _apiClient.CallPostApiAsync("joinGroupLink", new { groupCode });
+    public Task<ZaloApiResponse<JsonElement>> UpdateGroupSettingsAsync(string groupId, object settings) => _apiClient.CallPostApiAsync("updateGroupSettings", new { groupId, settings });
+    public Task<ZaloApiResponse<JsonElement>> GetPendingGroupMembersAsync(string groupId) => _apiClient.CallGetApiAsync("getPendingGroupMembers", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> ReviewPendingMemberRequestAsync(string groupId, long userId, bool approve) => _apiClient.CallPostApiAsync("reviewPendingMemberRequest", new { groupId, userId, approve });
+    public Task<ZaloApiResponse<JsonElement>> GetGroupInviteBoxInfoAsync(string code) => _apiClient.CallGetApiAsync("getGroupInviteBoxInfo", new { code });
+    public Task<ZaloApiResponse<JsonElement>> GetGroupInviteBoxListAsync() => _apiClient.CallGetApiAsync("getGroupInviteBoxList");
+    public Task<ZaloApiResponse<JsonElement>> JoinGroupInviteBoxAsync(string code) => _apiClient.CallPostApiAsync("joinGroupInviteBox", new { code });
+    public Task<ZaloApiResponse<JsonElement>> DeleteGroupInviteBoxAsync(string code) => _apiClient.CallPostApiAsync("deleteGroupInviteBox", new { code });
+    public Task<ZaloApiResponse<JsonElement>> UpgradeGroupToCommunityAsync(string groupId) => _apiClient.CallPostApiAsync("upgradeGroupToCommunity", new { groupId });
 
     // ─── Conversation APIs ───────────────────────────────────────────────
     public async Task<ZaloApiResponse<JsonElement>> GetConversationAsync()
@@ -1390,102 +1407,102 @@ public class ZaloApi
     /// Returns structured data with conversations, profiles, and groupInfo.
     /// Equivalent to zca-js's getContext().
     /// </summary>
-    public Task<ZaloApiResponse<JsonElement>> GetContextAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getContext");
+    public Task<ZaloApiResponse<JsonElement>> GetContextAsync() => _apiClient.CallGetApiAsync("getContext");
 
-    public Task<ZaloApiResponse<JsonElement>> GetArchivedChatListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getArchivedChatList");
-    public Task<ZaloApiResponse<JsonElement>> UpdateArchivedChatListAsync(string threadId, bool archive, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateArchivedChatList", new { threadId, archive, threadType });
-    public Task<ZaloApiResponse<JsonElement>> GetHiddenConversationsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getHiddenConversations");
-    public Task<ZaloApiResponse<JsonElement>> SetHiddenConversationsAsync(List<string> threadIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "setHiddenConversations", new { threadIds });
-    public Task<ZaloApiResponse<JsonElement>> GetPinConversationsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getPinConversations");
-    public Task<ZaloApiResponse<JsonElement>> SetPinnedConversationsAsync(List<string> threadIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "setPinnedConversations", new { threadIds });
-    public Task<ZaloApiResponse<JsonElement>> ResetHiddenConversPinAsync() => ApiMethods.CallPostApiAsync(_context, _httpClient, "resetHiddenConversPin");
-    public Task<ZaloApiResponse<JsonElement>> UpdateHiddenConversPinAsync(string threadId, bool hidden, bool pinned) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateHiddenConversPin", new { threadId, hidden, pinned });
-    public Task<ZaloApiResponse<JsonElement>> DeleteChatAsync(string threadId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "deleteChat", new { threadId, clientId = GetTimestamp() });
-    public Task<ZaloApiResponse<JsonElement>> AddUnreadMarkAsync(string threadId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "addUnreadMark", new { threadId });
-    public Task<ZaloApiResponse<JsonElement>> RemoveUnreadMarkAsync(string threadId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "removeUnreadMark", new { threadId });
-    public Task<ZaloApiResponse<JsonElement>> GetUnreadMarkAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getUnreadMark");
-    public Task<ZaloApiResponse<JsonElement>> GetAutoDeleteChatAsync(string threadId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAutoDeleteChat", new { threadId });
-    public Task<ZaloApiResponse<JsonElement>> UpdateAutoDeleteChatAsync(string threadId, int duration) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateAutoDeleteChat", new { threadId, duration });
+    public Task<ZaloApiResponse<JsonElement>> GetArchivedChatListAsync() => _apiClient.CallGetApiAsync("getArchivedChatList");
+    public Task<ZaloApiResponse<JsonElement>> UpdateArchivedChatListAsync(string threadId, bool archive, ThreadType threadType = ThreadType.User) => _apiClient.CallPostApiAsync("updateArchivedChatList", new { threadId, archive, threadType });
+    public Task<ZaloApiResponse<JsonElement>> GetHiddenConversationsAsync() => _apiClient.CallGetApiAsync("getHiddenConversations");
+    public Task<ZaloApiResponse<JsonElement>> SetHiddenConversationsAsync(List<string> threadIds) => _apiClient.CallPostApiAsync("setHiddenConversations", new { threadIds });
+    public Task<ZaloApiResponse<JsonElement>> GetPinConversationsAsync() => _apiClient.CallGetApiAsync("getPinConversations");
+    public Task<ZaloApiResponse<JsonElement>> SetPinnedConversationsAsync(List<string> threadIds) => _apiClient.CallPostApiAsync("setPinnedConversations", new { threadIds });
+    public Task<ZaloApiResponse<JsonElement>> ResetHiddenConversPinAsync() => _apiClient.CallPostApiAsync("resetHiddenConversPin");
+    public Task<ZaloApiResponse<JsonElement>> UpdateHiddenConversPinAsync(string threadId, bool hidden, bool pinned) => _apiClient.CallPostApiAsync("updateHiddenConversPin", new { threadId, hidden, pinned });
+    public Task<ZaloApiResponse<JsonElement>> DeleteChatAsync(string threadId) => _apiClient.CallEncryptedPostApiAsync("deleteChat", new { threadId, clientId = GetTimestamp() });
+    public Task<ZaloApiResponse<JsonElement>> AddUnreadMarkAsync(string threadId) => _apiClient.CallPostApiAsync("addUnreadMark", new { threadId });
+    public Task<ZaloApiResponse<JsonElement>> RemoveUnreadMarkAsync(string threadId) => _apiClient.CallPostApiAsync("removeUnreadMark", new { threadId });
+    public Task<ZaloApiResponse<JsonElement>> GetUnreadMarkAsync() => _apiClient.CallGetApiAsync("getUnreadMark");
+    public Task<ZaloApiResponse<JsonElement>> GetAutoDeleteChatAsync(string threadId) => _apiClient.CallGetApiAsync("getAutoDeleteChat", new { threadId });
+    public Task<ZaloApiResponse<JsonElement>> UpdateAutoDeleteChatAsync(string threadId, int duration) => _apiClient.CallPostApiAsync("updateAutoDeleteChat", new { threadId, duration });
 
     // ─── Sticker APIs (encrypted GET) ────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> GetStickersAsync(string keyword) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getStickers", new { keyword, gif = 1, guggy = 0, imei = GetImei() });
-    public Task<ZaloApiResponse<JsonElement>> GetStickersDetailAsync(int stickerId) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getStickersDetail", new { sid = stickerId });
-    public Task<ZaloApiResponse<JsonElement>> GetStickerCategoryDetailAsync(int categoryId) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "getStickerCategoryDetail", new { cid = categoryId });
-    public Task<ZaloApiResponse<JsonElement>> SearchStickerAsync(string keyword) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "searchSticker", new { keyword, limit = 50, srcType = 0, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> GetStickersAsync(string keyword) => _apiClient.CallEncryptedGetApiAsync("getStickers", new { keyword, gif = 1, guggy = 0, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> GetStickersDetailAsync(int stickerId) => _apiClient.CallEncryptedGetApiAsync("getStickersDetail", new { sid = stickerId });
+    public Task<ZaloApiResponse<JsonElement>> GetStickerCategoryDetailAsync(int categoryId) => _apiClient.CallEncryptedGetApiAsync("getStickerCategoryDetail", new { cid = categoryId });
+    public Task<ZaloApiResponse<JsonElement>> SearchStickerAsync(string keyword) => _apiClient.CallEncryptedGetApiAsync("searchSticker", new { keyword, limit = 50, srcType = 0, imei = GetImei() });
 
     // ─── Poll APIs ───────────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> CreatePollAsync(string groupId, string question, List<string> options) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createPoll", new { groupId, question, options });
-    public Task<ZaloApiResponse<JsonElement>> GetPollDetailAsync(string pollId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getPollDetail", new { pollId });
-    public Task<ZaloApiResponse<JsonElement>> AddPollOptionsAsync(string pollId, List<string> options) => ApiMethods.CallPostApiAsync(_context, _httpClient, "addPollOptions", new { pollId, options });
-    public Task<ZaloApiResponse<JsonElement>> VotePollAsync(string pollId, List<int> optionIds) => ApiMethods.CallPostApiAsync(_context, _httpClient, "votePoll", new { pollId, optionIds });
-    public Task<ZaloApiResponse<JsonElement>> LockPollAsync(string pollId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "lockPoll", new { pollId });
-    public Task<ZaloApiResponse<JsonElement>> SharePollAsync(string pollId, string threadId, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "sharePoll", new { pollId, threadId, threadType });
+    public Task<ZaloApiResponse<JsonElement>> CreatePollAsync(string groupId, string question, List<string> options) => _apiClient.CallPostApiAsync("createPoll", new { groupId, question, options });
+    public Task<ZaloApiResponse<JsonElement>> GetPollDetailAsync(string pollId) => _apiClient.CallGetApiAsync("getPollDetail", new { pollId });
+    public Task<ZaloApiResponse<JsonElement>> AddPollOptionsAsync(string pollId, List<string> options) => _apiClient.CallPostApiAsync("addPollOptions", new { pollId, options });
+    public Task<ZaloApiResponse<JsonElement>> VotePollAsync(string pollId, List<int> optionIds) => _apiClient.CallPostApiAsync("votePoll", new { pollId, optionIds });
+    public Task<ZaloApiResponse<JsonElement>> LockPollAsync(string pollId) => _apiClient.CallPostApiAsync("lockPoll", new { pollId });
+    public Task<ZaloApiResponse<JsonElement>> SharePollAsync(string pollId, string threadId, ThreadType threadType = ThreadType.User) => _apiClient.CallPostApiAsync("sharePoll", new { pollId, threadId, threadType });
 
     // ─── Reminder APIs ───────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> CreateReminderAsync(string groupId, string message, long remindTime) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createReminder", new { groupId, message, remindTime });
-    public Task<ZaloApiResponse<JsonElement>> EditReminderAsync(string reminderId, string message, long remindTime) => ApiMethods.CallPostApiAsync(_context, _httpClient, "editReminder", new { reminderId, message, remindTime });
-    public Task<ZaloApiResponse<JsonElement>> RemoveReminderAsync(string reminderId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "removeReminder", new { reminderId });
-    public Task<ZaloApiResponse<JsonElement>> GetReminderAsync(string reminderId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getReminder", new { reminderId });
-    public Task<ZaloApiResponse<JsonElement>> GetListReminderAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getListReminder", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> GetReminderResponsesAsync(string reminderId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getReminderResponses", new { reminderId });
+    public Task<ZaloApiResponse<JsonElement>> CreateReminderAsync(string groupId, string message, long remindTime) => _apiClient.CallPostApiAsync("createReminder", new { groupId, message, remindTime });
+    public Task<ZaloApiResponse<JsonElement>> EditReminderAsync(string reminderId, string message, long remindTime) => _apiClient.CallPostApiAsync("editReminder", new { reminderId, message, remindTime });
+    public Task<ZaloApiResponse<JsonElement>> RemoveReminderAsync(string reminderId) => _apiClient.CallPostApiAsync("removeReminder", new { reminderId });
+    public Task<ZaloApiResponse<JsonElement>> GetReminderAsync(string reminderId) => _apiClient.CallGetApiAsync("getReminder", new { reminderId });
+    public Task<ZaloApiResponse<JsonElement>> GetListReminderAsync(string groupId) => _apiClient.CallGetApiAsync("getListReminder", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> GetReminderResponsesAsync(string reminderId) => _apiClient.CallGetApiAsync("getReminderResponses", new { reminderId });
 
     // ─── Catalog APIs ────────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> CreateCatalogAsync(string name) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createCatalog", new { name });
-    public Task<ZaloApiResponse<JsonElement>> UpdateCatalogAsync(string catalogId, string name) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateCatalog", new { catalogId, name });
-    public Task<ZaloApiResponse<JsonElement>> DeleteCatalogAsync(string catalogId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "deleteCatalog", new { catalogId });
-    public Task<ZaloApiResponse<JsonElement>> GetCatalogListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getCatalogList");
-    public Task<ZaloApiResponse<JsonElement>> CreateProductCatalogAsync(string catalogId, object product) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createProductCatalog", new { catalogId, product });
-    public Task<ZaloApiResponse<JsonElement>> UpdateProductCatalogAsync(string productId, object product) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateProductCatalog", new { productId, product });
-    public Task<ZaloApiResponse<JsonElement>> DeleteProductCatalogAsync(string productId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "deleteProductCatalog", new { productId });
-    public Task<ZaloApiResponse<JsonElement>> GetProductCatalogListAsync(string catalogId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getProductCatalogList", new { catalogId });
-    public Task<ZaloApiResponse<JsonElement>> UploadProductPhotoAsync(string productId, string imagePath) => ApiMethods.CallPostApiAsync(_context, _httpClient, "uploadProductPhoto", new { productId, imagePath });
+    public Task<ZaloApiResponse<JsonElement>> CreateCatalogAsync(string name) => _apiClient.CallPostApiAsync("createCatalog", new { name });
+    public Task<ZaloApiResponse<JsonElement>> UpdateCatalogAsync(string catalogId, string name) => _apiClient.CallPostApiAsync("updateCatalog", new { catalogId, name });
+    public Task<ZaloApiResponse<JsonElement>> DeleteCatalogAsync(string catalogId) => _apiClient.CallPostApiAsync("deleteCatalog", new { catalogId });
+    public Task<ZaloApiResponse<JsonElement>> GetCatalogListAsync() => _apiClient.CallGetApiAsync("getCatalogList");
+    public Task<ZaloApiResponse<JsonElement>> CreateProductCatalogAsync(string catalogId, object product) => _apiClient.CallPostApiAsync("createProductCatalog", new { catalogId, product });
+    public Task<ZaloApiResponse<JsonElement>> UpdateProductCatalogAsync(string productId, object product) => _apiClient.CallPostApiAsync("updateProductCatalog", new { productId, product });
+    public Task<ZaloApiResponse<JsonElement>> DeleteProductCatalogAsync(string productId) => _apiClient.CallPostApiAsync("deleteProductCatalog", new { productId });
+    public Task<ZaloApiResponse<JsonElement>> GetProductCatalogListAsync(string catalogId) => _apiClient.CallGetApiAsync("getProductCatalogList", new { catalogId });
+    public Task<ZaloApiResponse<JsonElement>> UploadProductPhotoAsync(string productId, string imagePath) => _apiClient.CallPostApiAsync("uploadProductPhoto", new { productId, imagePath });
 
     // ─── Auto Reply APIs ────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> CreateAutoReplyAsync(object autoReplyData) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createAutoReply", autoReplyData);
-    public Task<ZaloApiResponse<JsonElement>> UpdateAutoReplyAsync(string autoReplyId, object autoReplyData) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateAutoReply", new { autoReplyId, autoReplyData });
-    public Task<ZaloApiResponse<JsonElement>> DeleteAutoReplyAsync(string autoReplyId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "deleteAutoReply", new { autoReplyId });
-    public Task<ZaloApiResponse<JsonElement>> GetAutoReplyListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getAutoReplyList");
+    public Task<ZaloApiResponse<JsonElement>> CreateAutoReplyAsync(object autoReplyData) => _apiClient.CallPostApiAsync("createAutoReply", autoReplyData);
+    public Task<ZaloApiResponse<JsonElement>> UpdateAutoReplyAsync(string autoReplyId, object autoReplyData) => _apiClient.CallPostApiAsync("updateAutoReply", new { autoReplyId, autoReplyData });
+    public Task<ZaloApiResponse<JsonElement>> DeleteAutoReplyAsync(string autoReplyId) => _apiClient.CallPostApiAsync("deleteAutoReply", new { autoReplyId });
+    public Task<ZaloApiResponse<JsonElement>> GetAutoReplyListAsync() => _apiClient.CallGetApiAsync("getAutoReplyList");
 
     // ─── Quick Message APIs ─────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> AddQuickMessageAsync(string message) => ApiMethods.CallPostApiAsync(_context, _httpClient, "addQuickMessage", new { message });
-    public Task<ZaloApiResponse<JsonElement>> UpdateQuickMessageAsync(string quickMessageId, string message) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateQuickMessage", new { quickMessageId, message });
-    public Task<ZaloApiResponse<JsonElement>> RemoveQuickMessageAsync(string quickMessageId) => ApiMethods.CallPostApiAsync(_context, _httpClient, "removeQuickMessage", new { quickMessageId });
-    public Task<ZaloApiResponse<JsonElement>> GetQuickMessageListAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getQuickMessageList");
+    public Task<ZaloApiResponse<JsonElement>> AddQuickMessageAsync(string message) => _apiClient.CallPostApiAsync("addQuickMessage", new { message });
+    public Task<ZaloApiResponse<JsonElement>> UpdateQuickMessageAsync(string quickMessageId, string message) => _apiClient.CallPostApiAsync("updateQuickMessage", new { quickMessageId, message });
+    public Task<ZaloApiResponse<JsonElement>> RemoveQuickMessageAsync(string quickMessageId) => _apiClient.CallPostApiAsync("removeQuickMessage", new { quickMessageId });
+    public Task<ZaloApiResponse<JsonElement>> GetQuickMessageListAsync() => _apiClient.CallGetApiAsync("getQuickMessageList");
 
     // ─── Board/Note APIs ────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> GetListBoardAsync(string groupId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getListBoard", new { groupId });
-    public Task<ZaloApiResponse<JsonElement>> CreateNoteAsync(string groupId, string content) => ApiMethods.CallPostApiAsync(_context, _httpClient, "createNote", new { groupId, content });
-    public Task<ZaloApiResponse<JsonElement>> EditNoteAsync(string noteId, string content) => ApiMethods.CallPostApiAsync(_context, _httpClient, "editNote", new { noteId, content });
+    public Task<ZaloApiResponse<JsonElement>> GetListBoardAsync(string groupId) => _apiClient.CallGetApiAsync("getListBoard", new { groupId });
+    public Task<ZaloApiResponse<JsonElement>> CreateNoteAsync(string groupId, string content) => _apiClient.CallPostApiAsync("createNote", new { groupId, content });
+    public Task<ZaloApiResponse<JsonElement>> EditNoteAsync(string noteId, string content) => _apiClient.CallPostApiAsync("editNote", new { noteId, content });
 
     // ─── Label APIs ─────────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> GetLabelsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getLabels");
-    public Task<ZaloApiResponse<JsonElement>> UpdateLabelsAsync(List<object> labels) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateLabels", new { labels });
+    public Task<ZaloApiResponse<JsonElement>> GetLabelsAsync() => _apiClient.CallGetApiAsync("getLabels");
+    public Task<ZaloApiResponse<JsonElement>> UpdateLabelsAsync(List<object> labels) => _apiClient.CallPostApiAsync("updateLabels", new { labels });
 
     // ─── Settings APIs ───────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> GetSettingsAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getSettings");
-    public Task<ZaloApiResponse<JsonElement>> UpdateSettingsAsync(object settings) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateSettings", settings);
-    public Task<ZaloApiResponse<JsonElement>> UpdateLangAsync(string language) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateLang", new { language });
-    public Task<ZaloApiResponse<JsonElement>> SetMuteAsync(string threadId, int muteDuration, ThreadType threadType = ThreadType.User) => ApiMethods.CallPostApiAsync(_context, _httpClient, "setMute", new { threadId, muteDuration, threadType });
-    public Task<ZaloApiResponse<JsonElement>> GetMuteAsync(string threadId, ThreadType threadType = ThreadType.User) => ApiMethods.CallGetApiAsync(_context, _httpClient, "getMute", new { threadId, threadType });
-    public Task<ZaloApiResponse<JsonElement>> UpdateActiveStatusAsync(bool isActive) => ApiMethods.CallPostApiAsync(_context, _httpClient, "updateActiveStatus", new { isActive });
-    public Task<ZaloApiResponse<JsonElement>> KeepAliveAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "keepAlive");
-    public Task<ZaloApiResponse<JsonElement>> LastOnlineAsync(long userId) => ApiMethods.CallGetApiAsync(_context, _httpClient, "lastOnline", new { userId });
-    public Task<ZaloApiResponse<JsonElement>> GetQrAsync(string userId) => ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "getQR", new { fids = new[] { userId } });
-    public Task<ZaloApiResponse<JsonElement>> GetCookieAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getCookie");
-    public Task<ZaloApiResponse<JsonElement>> ParseLinkAsync(string url) => ApiMethods.CallEncryptedGetApiAsync(_context, _httpClient, "parseLink", new { link = url, version = 1, imei = GetImei() });
+    public Task<ZaloApiResponse<JsonElement>> GetSettingsAsync() => _apiClient.CallGetApiAsync("getSettings");
+    public Task<ZaloApiResponse<JsonElement>> UpdateSettingsAsync(object settings) => _apiClient.CallPostApiAsync("updateSettings", settings);
+    public Task<ZaloApiResponse<JsonElement>> UpdateLangAsync(string language) => _apiClient.CallPostApiAsync("updateLang", new { language });
+    public Task<ZaloApiResponse<JsonElement>> SetMuteAsync(string threadId, int muteDuration, ThreadType threadType = ThreadType.User) => _apiClient.CallPostApiAsync("setMute", new { threadId, muteDuration, threadType });
+    public Task<ZaloApiResponse<JsonElement>> GetMuteAsync(string threadId, ThreadType threadType = ThreadType.User) => _apiClient.CallGetApiAsync("getMute", new { threadId, threadType });
+    public Task<ZaloApiResponse<JsonElement>> UpdateActiveStatusAsync(bool isActive) => _apiClient.CallPostApiAsync("updateActiveStatus", new { isActive });
+    public Task<ZaloApiResponse<JsonElement>> KeepAliveAsync() => _apiClient.CallGetApiAsync("keepAlive");
+    public Task<ZaloApiResponse<JsonElement>> LastOnlineAsync(long userId) => _apiClient.CallGetApiAsync("lastOnline", new { userId });
+    public Task<ZaloApiResponse<JsonElement>> GetQrAsync(string userId) => _apiClient.CallEncryptedPostApiAsync("getQR", new { fids = new[] { userId } });
+    public Task<ZaloApiResponse<JsonElement>> GetCookieAsync() => _apiClient.CallGetApiAsync("getCookie");
+    public Task<ZaloApiResponse<JsonElement>> ParseLinkAsync(string url) => _apiClient.CallEncryptedGetApiAsync("parseLink", new { link = url, version = 1, imei = GetImei() });
 
     // ─── Report API (encrypted POST for both user/group) ─────────────────
     public Task<ZaloApiResponse<JsonElement>> SendReportAsync(string threadId, int reason, string? content = null, ThreadType threadType = ThreadType.User)
     {
         if (threadType == ThreadType.Group)
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendReportGroup",
+            return _apiClient.CallEncryptedPostApiAsync("sendReportGroup",
                 new { uidTo = threadId, type = 14, reason, content = content ?? "", imei = GetImei() });
         else
-            return ApiMethods.CallEncryptedPostApiAsync(_context, _httpClient, "sendReport",
+            return _apiClient.CallEncryptedPostApiAsync("sendReport",
                 new { idTo = threadId, objId = "person.profile", reason = reason.ToString(), content });
     }
 
-    public Task<ZaloApiResponse<JsonElement>> GetBizAccountAsync() => ApiMethods.CallGetApiAsync(_context, _httpClient, "getBizAccount");
+    public Task<ZaloApiResponse<JsonElement>> GetBizAccountAsync() => _apiClient.CallGetApiAsync("getBizAccount");
     public Task<ZaloApiResponse<JsonElement>> CustomApiCallAsync(string method, string endpoint, object? data = null, bool isGet = true)
-        => ApiMethods.CallCustomApiAsync(_context, _httpClient, method, endpoint, data, isGet);
+        => _apiClient.CallCustomApiAsync(method, endpoint, data, isGet);
 }
