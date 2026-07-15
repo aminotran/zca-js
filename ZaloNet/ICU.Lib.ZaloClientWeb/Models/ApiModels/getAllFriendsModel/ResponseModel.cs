@@ -16,8 +16,8 @@
         public string phoneNumber { get; set; }
         public int isFr { get; set; }
         public int isBlocked { get; set; }
-        public object lastActionTime { get; set; }
-        public int lastUpdateTime { get; set; }
+        public long lastActionTime { get; set; }
+        public long lastUpdateTime { get; set; }
         public int isActive { get; set; }
         public int key { get; set; }
         public int type { get; set; }

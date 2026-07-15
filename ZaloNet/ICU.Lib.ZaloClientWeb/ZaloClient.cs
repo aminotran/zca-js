@@ -237,8 +237,7 @@ public class ZaloApi
             imei = GetImei()
         };
         ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallPostApiAsync("getUserInfo", requestModel);
-        //string a = responseResult.Data.ToString();
-        Models.ApiModels.getUserInfoModel.ResponseModel? data = JsonSerializer.Deserialize<ICU.Lib.ZaloClientWeb.Models.ApiModels.getUserInfoModel.ResponseModel>(responseResult.Data);
+        Models.ApiModels.getUserInfoModel.ResponseModel? data = string.IsNullOrWhiteSpace(responseResult.Data.ToString()) ? null : responseResult.Data.Deserialize<Models.ApiModels.getUserInfoModel.ResponseModel>();
         ZaloApiResponse<Models.ApiModels.getUserInfoModel.ResponseModel?> result = new()
         {
             Data = data,
@@ -261,8 +260,7 @@ public class ZaloApi
             if (requestModel.language == "vi")
                 requestModel.phone = "84" + requestModel.phone.Substring(1);
         ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallPostApiAsync("findUser", requestModel);
-        string a = responseResult.Data.ToString();
-        Models.ApiModels.findUserModel.ResponseModel? data = JsonSerializer.Deserialize<Models.ApiModels.findUserModel.ResponseModel>(responseResult.Data);
+        Models.ApiModels.findUserModel.ResponseModel? data = string.IsNullOrWhiteSpace(responseResult.Data.ToString()) ? null : responseResult.Data.Deserialize<Models.ApiModels.findUserModel.ResponseModel>();
         ZaloApiResponse<Models.ApiModels.findUserModel.ResponseModel?> result = new()
         {
             Data = data,
@@ -271,7 +269,24 @@ public class ZaloApi
         };
         return result;
     }
-    public Task<ZaloApiResponse<JsonElement>> FindUserByUsernameAsync(string username) => ApiClient.CallGetApiAsync("findUserByUsername", new { username });
+    public async Task<ZaloApiResponse<Models.ApiModels.findUserByUsernameModel.ResponseModel?>> FindUserByUsernameAsync(string username)
+    {
+        Models.ApiModels.findUserByUsernameModel.RequestModel requestModel = new()
+        {
+            user_name = username,
+            avatar_size = (int)AvatarSize.Small
+        };
+        ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallPostApiAsync("findUserByUsername", requestModel);
+        string a = responseResult.Data.ToString();
+        Models.ApiModels.findUserByUsernameModel.ResponseModel? data = string.IsNullOrWhiteSpace(responseResult.Data.ToString()) ? null : responseResult.Data.Deserialize<Models.ApiModels.findUserByUsernameModel.ResponseModel>();
+        ZaloApiResponse<Models.ApiModels.findUserByUsernameModel.ResponseModel?> result = new()
+        {
+            Data = data,
+            Error = responseResult.Error,
+            ErrorCode = responseResult.ErrorCode
+        };
+        return result;
+    }
     public Task<ZaloApiResponse<JsonElement>> GetAccountInfoAsync() => ApiClient.CallGetApiAsync("fetchAccountInfo");
     public long GetOwnId() => Context.Uid;
     public Task<ZaloApiResponse<long>> GetOwnIdAsync() => Task.FromResult(new ZaloApiResponse<long> { Data = Context.Uid });
@@ -297,7 +312,7 @@ public class ZaloApi
             imei = GetImei()
         };
         ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallEncryptedGetApiAsync("getAllFriends", bodyRequest);
-        List<Models.ApiModels.getAllFriendsModel.ResponseModel>? data = JsonSerializer.Deserialize<List<Models.ApiModels.getAllFriendsModel.ResponseModel>>(responseResult.Data);
+        List<Models.ApiModels.getAllFriendsModel.ResponseModel>? data = string.IsNullOrWhiteSpace(responseResult.Data.ToString()) ? null : responseResult.Data.Deserialize<List<Models.ApiModels.getAllFriendsModel.ResponseModel>>();
         ZaloApiResponse<List<Models.ApiModels.getAllFriendsModel.ResponseModel>?> result = new()
         {
             Data = data,
