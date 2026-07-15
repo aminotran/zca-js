@@ -247,7 +247,30 @@ public class ZaloApi
         };
         return result;
     }
-    public Task<ZaloApiResponse<JsonElement>> FindUserAsync(string phoneNumber) => ApiClient.CallGetApiAsync("findUser", new { phoneNumber });
+    public async Task<ZaloApiResponse<Models.ApiModels.findUserModel.ResponseModel?>> FindUserAsync(string phoneNumber)
+    {
+        Models.ApiModels.findUserModel.RequestModel requestModel = new()
+        {
+            phone = phoneNumber,
+            avatar_size = (int)AvatarSize.Small,
+            language = Context.Language,
+            imei = GetImei(),
+            reqSrc = 1
+        };
+        if (requestModel.phone.StartsWith("0"))
+            if (requestModel.language == "vi")
+                requestModel.phone = "84" + requestModel.phone.Substring(1);
+        ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallPostApiAsync("findUser", requestModel);
+        string a = responseResult.Data.ToString();
+        Models.ApiModels.findUserModel.ResponseModel? data = JsonSerializer.Deserialize<Models.ApiModels.findUserModel.ResponseModel>(responseResult.Data);
+        ZaloApiResponse<Models.ApiModels.findUserModel.ResponseModel?> result = new()
+        {
+            Data = data,
+            Error = responseResult.Error,
+            ErrorCode = responseResult.ErrorCode
+        };
+        return result;
+    }
     public Task<ZaloApiResponse<JsonElement>> FindUserByUsernameAsync(string username) => ApiClient.CallGetApiAsync("findUserByUsername", new { username });
     public Task<ZaloApiResponse<JsonElement>> GetAccountInfoAsync() => ApiClient.CallGetApiAsync("fetchAccountInfo");
     public long GetOwnId() => Context.Uid;
