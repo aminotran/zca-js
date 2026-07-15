@@ -1,7 +1,6 @@
-using System;
-using System.Collections.Generic;
+using ICU.Lib.ZaloClientWeb.Models.ApiModels.getUserInfoModel;
+using ICU.Lib.ZaloClientWeb.Utils;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace ICU.Lib.ZaloClientWeb.Demo.Scenarios;
 
@@ -14,11 +13,11 @@ public static class ConversationListDemo
     public static async Task RunAsync(ZaloApi api)
     {
         // Use a simple name cache populated from GetConversationAsync response
-        var nameCache = new Dictionary<string, string>();
+        Dictionary<string, string> nameCache = new();
 
         Console.WriteLine("\n--- Conversation List ---");
         Console.Write("Fetching conversations... ");
-        var result = await api.GetConversationAsync();
+        ZaloApiResponse<JsonElement> result = await api.GetConversationAsync();
         Console.WriteLine("Done.");
 
         if (!result.IsSuccess)
@@ -29,7 +28,7 @@ public static class ConversationListDemo
             return;
         }
 
-        var root = result.Data;
+        JsonElement root = result.Data;
 
         // GetConversationAsync returns: { data: { conversations: [...], profiles: {...}, groupInfo: {...} } }
         JsonElement conversations;
@@ -37,7 +36,7 @@ public static class ConversationListDemo
 
         if (root.TryGetProperty("data", out dataWrapper) && dataWrapper.ValueKind == JsonValueKind.Object)
         {
-            conversations = dataWrapper.TryGetProperty("conversations", out var convs)
+            conversations = dataWrapper.TryGetProperty("conversations", out JsonElement convs)
                 ? convs
                 : root;
         }
@@ -49,15 +48,15 @@ public static class ConversationListDemo
         // Extract profiles/groupInfo from the response for name resolution
         if (dataWrapper.ValueKind == JsonValueKind.Object)
         {
-            if (dataWrapper.TryGetProperty("profiles", out var profiles) && profiles.ValueKind == JsonValueKind.Object)
+            if (dataWrapper.TryGetProperty("profiles", out JsonElement profiles) && profiles.ValueKind == JsonValueKind.Object)
             {
-                foreach (var profile in profiles.EnumerateObject())
+                foreach (JsonProperty profile in profiles.EnumerateObject())
                 {
                     var key = profile.Name;
-                    var val = profile.Value;
-                    var name = val.TryGetProperty("displayName", out var dn)
+                    JsonElement val = profile.Value;
+                    var name = val.TryGetProperty("displayName", out JsonElement dn)
                         ? dn.GetString()
-                        : val.TryGetProperty("name", out var n)
+                        : val.TryGetProperty("name", out JsonElement n)
                             ? n.GetString()
                             : null;
                     if (name != null && !nameCache.ContainsKey(key))
@@ -65,13 +64,13 @@ public static class ConversationListDemo
                 }
             }
 
-            if (dataWrapper.TryGetProperty("groupInfo", out var groupInfo) && groupInfo.ValueKind == JsonValueKind.Object)
+            if (dataWrapper.TryGetProperty("groupInfo", out JsonElement groupInfo) && groupInfo.ValueKind == JsonValueKind.Object)
             {
-                foreach (var grp in groupInfo.EnumerateObject())
+                foreach (JsonProperty grp in groupInfo.EnumerateObject())
                 {
                     var key = grp.Name;
-                    var val = grp.Value;
-                    var name = val.TryGetProperty("name", out var gn)
+                    JsonElement val = grp.Value;
+                    var name = val.TryGetProperty("name", out JsonElement gn)
                         ? gn.GetString()
                         : null;
                     if (name != null && !nameCache.ContainsKey(key))
@@ -90,10 +89,10 @@ public static class ConversationListDemo
             return;
         }
 
-        var items = new List<ConversationItem>();
-        foreach (var conv in conversations.EnumerateArray())
+        List<ConversationItem> items = new();
+        foreach (JsonElement conv in conversations.EnumerateArray())
         {
-            var item = ParseConversation(conv, nameCache);
+            ConversationItem? item = ParseConversation(conv, nameCache);
             if (item != null) items.Add(item);
         }
 
@@ -116,7 +115,7 @@ public static class ConversationListDemo
 
         for (int i = 0; i < items.Count; i++)
         {
-            var item = items[i];
+            ConversationItem item = items[i];
             var nameDisplay = item.Name;
             if (nameDisplay.Length > 28) nameDisplay = nameDisplay[..25] + "...";
 
@@ -140,7 +139,7 @@ public static class ConversationListDemo
         var choice = Console.ReadLine()?.Trim();
         if (int.TryParse(choice, out int idx) && idx >= 1 && idx <= items.Count)
         {
-            var selected = items[idx - 1];
+            ConversationItem selected = items[idx - 1];
             Console.WriteLine();
             Console.WriteLine("--- Conversation Details ---");
             Console.WriteLine($"  Thread ID: {selected.ThreadId}");
@@ -158,7 +157,7 @@ public static class ConversationListDemo
             {
                 try
                 {
-                    var grpResult = await api.GetGroupInfoAsync(selected.ThreadId);
+                    ZaloApiResponse<JsonElement> grpResult = await api.GetGroupInfoAsync(selected.ThreadId);
                     if (grpResult.IsSuccess)
                     {
                         Console.WriteLine("\n  Group Info (from API):");
@@ -174,11 +173,12 @@ public static class ConversationListDemo
             {
                 try
                 {
-                    var userResult = await api.GetUserInfoAsync(long.Parse(selected.ThreadId));
+                    ZaloApiResponse<ResponseModel?> userResult = await api.GetUserInfoAsync(long.Parse(selected.ThreadId));
                     if (userResult.IsSuccess)
                     {
                         Console.WriteLine("\n  User Info (from API):");
-                        SafePrint(userResult.Data, "    ");
+                        Console.WriteLine($"    Phone: {userResult.Data.ChangedProfiles[selected.ThreadId].PhoneNumber}");
+                        Console.WriteLine($"    Display Name: {userResult.Data.ChangedProfiles[selected.ThreadId].DisplayName}");
                     }
                 }
                 catch { /* ignore */ }
@@ -194,24 +194,24 @@ public static class ConversationListDemo
         try
         {
             // Extract thread ID
-            var threadId = conv.TryGetProperty("id", out var idEl)
+            var threadId = conv.TryGetProperty("id", out JsonElement idEl)
                 ? idEl.GetString()
-                : conv.TryGetProperty("threadId", out var tidEl)
+                : conv.TryGetProperty("threadId", out JsonElement tidEl)
                     ? tidEl.GetString()
                     : null;
             if (string.IsNullOrEmpty(threadId)) return null;
 
             // Determine type: 0 = user, 1 = group
             var isGroup = false;
-            if (conv.TryGetProperty("type", out var typeEl) && typeEl.ValueKind == JsonValueKind.Number)
+            if (conv.TryGetProperty("type", out JsonElement typeEl) && typeEl.ValueKind == JsonValueKind.Number)
                 isGroup = typeEl.GetInt32() == 1;
-            else if (conv.TryGetProperty("isGroup", out var igEl))
+            else if (conv.TryGetProperty("isGroup", out JsonElement igEl))
                 isGroup = igEl.GetBoolean();
 
             // Name resolution: try cache first, then from conv data
-            var name = conv.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String
+            var name = conv.TryGetProperty("name", out JsonElement nameEl) && nameEl.ValueKind == JsonValueKind.String
                 ? nameEl.GetString()
-                : conv.TryGetProperty("userName", out var unEl)
+                : conv.TryGetProperty("userName", out JsonElement unEl)
                     ? unEl.GetString()
                     : null;
 
@@ -223,25 +223,25 @@ public static class ConversationListDemo
 
             // Last message
             string? lastMsg = null;
-            if (conv.TryGetProperty("lastMsg", out var lastMsgEl) && lastMsgEl.ValueKind == JsonValueKind.String)
+            if (conv.TryGetProperty("lastMsg", out JsonElement lastMsgEl) && lastMsgEl.ValueKind == JsonValueKind.String)
                 lastMsg = lastMsgEl.GetString();
-            else if (conv.TryGetProperty("lastMessage", out var lmEl) && lmEl.ValueKind == JsonValueKind.String)
+            else if (conv.TryGetProperty("lastMessage", out JsonElement lmEl) && lmEl.ValueKind == JsonValueKind.String)
                 lastMsg = lmEl.GetString();
-            else if (conv.TryGetProperty("notify", out var nfEl) && nfEl.ValueKind == JsonValueKind.String)
+            else if (conv.TryGetProperty("notify", out JsonElement nfEl) && nfEl.ValueKind == JsonValueKind.String)
                 lastMsg = nfEl.GetString();
 
             // Last activity timestamp
             long lastTime = 0;
-            if (conv.TryGetProperty("lastTime", out var ltEl) && ltEl.ValueKind == JsonValueKind.Number)
+            if (conv.TryGetProperty("lastTime", out JsonElement ltEl) && ltEl.ValueKind == JsonValueKind.Number)
                 lastTime = ltEl.GetInt64();
-            else if (conv.TryGetProperty("timestamp", out var tsEl) && tsEl.ValueKind == JsonValueKind.Number)
+            else if (conv.TryGetProperty("timestamp", out JsonElement tsEl) && tsEl.ValueKind == JsonValueKind.Number)
                 lastTime = tsEl.GetInt64();
 
             // Member count (for groups)
             int memberCount = 0;
-            if (conv.TryGetProperty("memberCount", out var mcEl) && mcEl.ValueKind == JsonValueKind.Number)
+            if (conv.TryGetProperty("memberCount", out JsonElement mcEl) && mcEl.ValueKind == JsonValueKind.Number)
                 memberCount = mcEl.GetInt32();
-            else if (conv.TryGetProperty("totalMember", out var tmEl) && tmEl.ValueKind == JsonValueKind.Number)
+            else if (conv.TryGetProperty("totalMember", out JsonElement tmEl) && tmEl.ValueKind == JsonValueKind.Number)
                 memberCount = tmEl.GetInt32();
 
             return new ConversationItem
@@ -265,8 +265,8 @@ public static class ConversationListDemo
         if (timestampMs <= 0) return "";
         try
         {
-            var dt = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs);
-            var now = DateTimeOffset.Now;
+            DateTimeOffset dt = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs);
+            DateTimeOffset now = DateTimeOffset.Now;
             if (dt.Date == now.Date)
                 return dt.ToLocalTime().ToString("HH:mm");
             if (dt.Year == now.Year)

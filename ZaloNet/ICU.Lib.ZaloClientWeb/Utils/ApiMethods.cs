@@ -1,15 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using ICU.Lib.ZaloClientWeb.Crypto;
+using ICU.Lib.ZaloClientWeb.Models;
+using System.Collections;
 using System.Net;
-using System.Net.Http;
 using System.Reflection;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Threading.Tasks;
-using ICU.Lib.ZaloClientWeb.Crypto;
-using ICU.Lib.ZaloClientWeb.Models;
 
 namespace ICU.Lib.ZaloClientWeb.Utils;
 
@@ -25,105 +21,182 @@ public static class ApiMethods
 
     private static readonly Dictionary<string, string> EndpointToServiceMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["fetchAccountInfo"] = "profile", ["updateProfile"] = "profile",
-        ["updateProfileBio"] = "profile", ["changeAccountAvatar"] = "file",
-        ["getAvatarList"] = "profile", ["getFullAvatar"] = "profile",
-        ["deleteAvatar"] = "profile", ["reuseAvatar"] = "profile",
-        ["getAvatarUrlProfile"] = "profile", ["findUser"] = "friend",
-        ["findUserByUsername"] = "friend", ["getUserInfo"] = "profile",
-        ["getAllFriends"] = "profile", ["getSettings"] = "profile",
-        ["updateSettings"] = "profile", ["updateLang"] = "profile",
-        ["updateActiveStatus"] = "profile", ["getQR"] = "friend",
-        ["getCookie"] = "profile", ["getBizAccount"] = "profile",
-        ["sendReport"] = "profile", ["lastOnline"] = "profile",
-        ["getMute"] = "profile", ["setMute"] = "profile",
+        ["fetchAccountInfo"] = "profile",
+        ["updateProfile"] = "profile",
+        ["updateProfileBio"] = "profile",
+        ["changeAccountAvatar"] = "file",
+        ["getAvatarList"] = "profile",
+        ["getFullAvatar"] = "profile",
+        ["deleteAvatar"] = "profile",
+        ["reuseAvatar"] = "profile",
+        ["getAvatarUrlProfile"] = "profile",
+        ["findUser"] = "friend",
+        ["findUserByUsername"] = "friend",
+        ["getUserInfo"] = "profile",
+        ["getAllFriends"] = "profile",
+        ["getSettings"] = "profile",
+        ["updateSettings"] = "profile",
+        ["updateLang"] = "profile",
+        ["updateActiveStatus"] = "profile",
+        ["getQR"] = "friend",
+        ["getCookie"] = "profile",
+        ["getBizAccount"] = "profile",
+        ["sendReport"] = "profile",
+        ["lastOnline"] = "profile",
+        ["getMute"] = "profile",
+        ["setMute"] = "profile",
         ["getCloseFriends"] = "profile",
 
-        ["acceptFriendRequest"] = "friend", ["rejectFriendRequest"] = "friend",
-        ["removeFriend"] = "friend", ["undoFriendRequest"] = "friend",
-        ["blockUser"] = "friend", ["unblockUser"] = "friend",
-        ["blockViewFeed"] = "friend", ["getFriendOnlines"] = "profile",
-        ["getFriendRecommendations"] = "friend", ["changeFriendAlias"] = "alias",
-        ["removeFriendAlias"] = "alias", ["getSentFriendRequest"] = "friend",
-        ["getRelatedFriendGroup"] = "friend", ["getMultiUsersByPhones"] = "friend",
-        ["inviteUserToGroups"] = "group", ["getAliasList"] = "alias",
-        ["sendFriendRequest"] = "friend", ["getFriendRequestStatus"] = "friend",
+        ["acceptFriendRequest"] = "friend",
+        ["rejectFriendRequest"] = "friend",
+        ["removeFriend"] = "friend",
+        ["undoFriendRequest"] = "friend",
+        ["blockUser"] = "friend",
+        ["unblockUser"] = "friend",
+        ["blockViewFeed"] = "friend",
+        ["getFriendOnlines"] = "profile",
+        ["getFriendRecommendations"] = "friend",
+        ["changeFriendAlias"] = "alias",
+        ["removeFriendAlias"] = "alias",
+        ["getSentFriendRequest"] = "friend",
+        ["getRelatedFriendGroup"] = "friend",
+        ["getMultiUsersByPhones"] = "friend",
+        ["inviteUserToGroups"] = "group",
+        ["getAliasList"] = "alias",
+        ["sendFriendRequest"] = "friend",
+        ["getFriendRequestStatus"] = "friend",
         ["getFriendBoardList"] = "friend_board",
 
-        ["sendMessageGroup"] = "group", ["sendMessageGroupQuote"] = "group", ["sendMessageGroupMention"] = "group",
+        ["sendMessageGroup"] = "group",
+        ["sendMessageGroupQuote"] = "group",
+        ["sendMessageGroupMention"] = "group",
         ["sendStickerGroup"] = "group",
-        ["deleteMessageGroup"] = "group", ["undoGroup"] = "group",
-        ["sendSeenEventGroup"] = "group", ["sendDeliveredEventGroup"] = "group",
+        ["deleteMessageGroup"] = "group",
+        ["undoGroup"] = "group",
+        ["sendSeenEventGroup"] = "group",
+        ["sendDeliveredEventGroup"] = "group",
         ["sendTypingEventGroup"] = "group",
         ["sendLinkGroup"] = "group",
 
         // sendVideo/sendVoice/sendCard for GROUP use file service
-        ["sendVideoGroup"] = "file", ["sendVoiceGroup"] = "file", ["sendCardGroup"] = "file",
+        ["sendVideoGroup"] = "file",
+        ["sendVoiceGroup"] = "file",
+        ["sendCardGroup"] = "file",
         // sendVideo/sendVoice/sendCard for USER use file service
-        ["sendVideo"] = "file", ["sendVoice"] = "file", ["sendCard"] = "file",
+        ["sendVideo"] = "file",
+        ["sendVoice"] = "file",
+        ["sendCard"] = "file",
 
-        ["getContext"] = "conversation", ["getArchivedChatList"] = "label",
-        ["updateArchivedChatList"] = "label", ["getHiddenConversations"] = "conversation",
-        ["setHiddenConversations"] = "conversation", ["getPinConversations"] = "conversation",
-        ["setPinnedConversations"] = "conversation", ["resetHiddenConversPin"] = "conversation",
-        ["updateHiddenConversPin"] = "conversation", ["deleteChat"] = "conversation",
-        ["addUnreadMark"] = "conversation", ["removeUnreadMark"] = "conversation",
-        ["getUnreadMark"] = "conversation", ["getAutoDeleteChat"] = "conversation",
-        ["updateAutoDeleteChat"] = "conversation", ["setMuteConversation"] = "conversation",
+        ["getContext"] = "conversation",
+        ["getArchivedChatList"] = "label",
+        ["updateArchivedChatList"] = "label",
+        ["getHiddenConversations"] = "conversation",
+        ["setHiddenConversations"] = "conversation",
+        ["getPinConversations"] = "conversation",
+        ["setPinnedConversations"] = "conversation",
+        ["resetHiddenConversPin"] = "conversation",
+        ["updateHiddenConversPin"] = "conversation",
+        ["deleteChat"] = "conversation",
+        ["addUnreadMark"] = "conversation",
+        ["removeUnreadMark"] = "conversation",
+        ["getUnreadMark"] = "conversation",
+        ["getAutoDeleteChat"] = "conversation",
+        ["updateAutoDeleteChat"] = "conversation",
+        ["setMuteConversation"] = "conversation",
         ["getMuteConversation"] = "conversation",
 
-        ["createGroup"] = "group", ["getAllGroups"] = "group_poll",
-        ["getGroupInfo"] = "group", ["getGroupMembersInfo"] = "profile",
-        ["getGroupChatHistory"] = "group", ["addUserToGroup"] = "group",
-        ["removeUserFromGroup"] = "group", ["leaveGroup"] = "group",
-        ["changeGroupName"] = "group", ["changeGroupAvatar"] = "file",
-        ["changeGroupOwner"] = "group", ["addGroupDeputy"] = "group",
-        ["removeGroupDeputy"] = "group", ["addGroupBlockedMember"] = "group",
-        ["removeGroupBlockedMember"] = "group", ["getGroupBlockedMember"] = "group",
-        ["disperseGroup"] = "group", ["enableGroupLink"] = "group",
-        ["disableGroupLink"] = "group", ["getGroupLinkInfo"] = "group",
-        ["getGroupLinkDetail"] = "group", ["joinGroupLink"] = "group",
-        ["updateGroupSettings"] = "group", ["getPendingGroupMembers"] = "group",
-        ["reviewPendingMemberRequest"] = "group", ["getGroupInviteBoxInfo"] = "group",
-        ["getGroupInviteBoxList"] = "group", ["joinGroupInviteBox"] = "group",
-        ["deleteGroupInviteBox"] = "group", ["upgradeGroupToCommunity"] = "group",
+        ["createGroup"] = "group",
+        ["getAllGroups"] = "group_poll",
+        ["getGroupInfo"] = "group",
+        ["getGroupMembersInfo"] = "profile",
+        ["getGroupChatHistory"] = "group",
+        ["addUserToGroup"] = "group",
+        ["removeUserFromGroup"] = "group",
+        ["leaveGroup"] = "group",
+        ["changeGroupName"] = "group",
+        ["changeGroupAvatar"] = "file",
+        ["changeGroupOwner"] = "group",
+        ["addGroupDeputy"] = "group",
+        ["removeGroupDeputy"] = "group",
+        ["addGroupBlockedMember"] = "group",
+        ["removeGroupBlockedMember"] = "group",
+        ["getGroupBlockedMember"] = "group",
+        ["disperseGroup"] = "group",
+        ["enableGroupLink"] = "group",
+        ["disableGroupLink"] = "group",
+        ["getGroupLinkInfo"] = "group",
+        ["getGroupLinkDetail"] = "group",
+        ["joinGroupLink"] = "group",
+        ["updateGroupSettings"] = "group",
+        ["getPendingGroupMembers"] = "group",
+        ["reviewPendingMemberRequest"] = "group",
+        ["getGroupInviteBoxInfo"] = "group",
+        ["getGroupInviteBoxList"] = "group",
+        ["joinGroupInviteBox"] = "group",
+        ["deleteGroupInviteBox"] = "group",
+        ["upgradeGroupToCommunity"] = "group",
         ["keepAlive"] = "chat",
 
-        ["sendMessage"] = "chat", ["sendMessageQuote"] = "chat", ["sendSticker"] = "chat",
+        ["sendMessage"] = "chat",
+        ["sendMessageQuote"] = "chat",
+        ["sendSticker"] = "chat",
         ["sendLink"] = "chat",
-        ["sendBankCard"] = "zimsg", ["forwardMessage"] = "chat",
-        ["deleteMessage"] = "chat", ["undo"] = "chat",
-        ["sendTypingEvent"] = "chat", ["sendSeenEvent"] = "chat",
-        ["sendDeliveredEvent"] = "chat", ["parseLink"] = "file",
-        ["addReaction"] = "reaction", ["uploadAttachment"] = "file",
+        ["sendBankCard"] = "zimsg",
+        ["forwardMessage"] = "chat",
+        ["deleteMessage"] = "chat",
+        ["undo"] = "chat",
+        ["sendTypingEvent"] = "chat",
+        ["sendSeenEvent"] = "chat",
+        ["sendDeliveredEvent"] = "chat",
+        ["parseLink"] = "file",
+        ["addReaction"] = "reaction",
+        ["uploadAttachment"] = "file",
 
-        ["getStickers"] = "sticker", ["getStickersDetail"] = "sticker",
-        ["getStickerCategoryDetail"] = "sticker", ["searchSticker"] = "sticker",
+        ["getStickers"] = "sticker",
+        ["getStickersDetail"] = "sticker",
+        ["getStickerCategoryDetail"] = "sticker",
+        ["searchSticker"] = "sticker",
 
-        ["createPoll"] = "group", ["getPollDetail"] = "group",
-        ["addPollOptions"] = "group", ["votePoll"] = "group",
-        ["lockPoll"] = "group", ["sharePoll"] = "group",
+        ["createPoll"] = "group",
+        ["getPollDetail"] = "group",
+        ["addPollOptions"] = "group",
+        ["votePoll"] = "group",
+        ["lockPoll"] = "group",
+        ["sharePoll"] = "group",
 
-        ["createReminder"] = "group", ["editReminder"] = "group",
-        ["removeReminder"] = "group", ["getReminder"] = "group_board",
-        ["getListReminder"] = "group", ["getReminderResponses"] = "group_board",
+        ["createReminder"] = "group",
+        ["editReminder"] = "group",
+        ["removeReminder"] = "group",
+        ["getReminder"] = "group_board",
+        ["getListReminder"] = "group",
+        ["getReminderResponses"] = "group_board",
 
-        ["createCatalog"] = "catalog", ["updateCatalog"] = "catalog",
-        ["deleteCatalog"] = "catalog", ["getCatalogList"] = "catalog",
-        ["createProductCatalog"] = "catalog", ["updateProductCatalog"] = "catalog",
-        ["deleteProductCatalog"] = "catalog", ["getProductCatalogList"] = "catalog",
+        ["createCatalog"] = "catalog",
+        ["updateCatalog"] = "catalog",
+        ["deleteCatalog"] = "catalog",
+        ["getCatalogList"] = "catalog",
+        ["createProductCatalog"] = "catalog",
+        ["updateProductCatalog"] = "catalog",
+        ["deleteProductCatalog"] = "catalog",
+        ["getProductCatalogList"] = "catalog",
         ["uploadProductPhoto"] = "file",
 
-        ["createAutoReply"] = "auto_reply", ["updateAutoReply"] = "auto_reply",
-        ["deleteAutoReply"] = "auto_reply", ["getAutoReplyList"] = "auto_reply",
+        ["createAutoReply"] = "auto_reply",
+        ["updateAutoReply"] = "auto_reply",
+        ["deleteAutoReply"] = "auto_reply",
+        ["getAutoReplyList"] = "auto_reply",
 
-        ["addQuickMessage"] = "quick_message", ["updateQuickMessage"] = "quick_message",
-        ["removeQuickMessage"] = "quick_message", ["getQuickMessageList"] = "quick_message",
+        ["addQuickMessage"] = "quick_message",
+        ["updateQuickMessage"] = "quick_message",
+        ["removeQuickMessage"] = "quick_message",
+        ["getQuickMessageList"] = "quick_message",
 
-        ["getListBoard"] = "group_board", ["createNote"] = "group_board",
+        ["getListBoard"] = "group_board",
+        ["createNote"] = "group_board",
         ["editNote"] = "group_board",
 
-        ["getLabels"] = "label", ["updateLabels"] = "label",
+        ["getLabels"] = "label",
+        ["updateLabels"] = "label",
     };
 
     private static readonly Dictionary<string, string> EndpointToPathMap = new(StringComparer.OrdinalIgnoreCase)
@@ -315,9 +388,9 @@ public static class ApiMethods
         string apiPath;
         if (!EndpointToPathMap.TryGetValue(endpoint, out apiPath))
             apiPath = $"/api/{endpoint}";
-        if (EndpointToServiceMap.TryGetValue(endpoint, out var serviceKey))
+        if (EndpointToServiceMap.TryGetValue(endpoint, out string? serviceKey))
         {
-            if (ctx.ZpwServiceMapV3.TryGetValue(serviceKey, out var urls) && urls.Length > 0)
+            if (ctx.ZpwServiceMapV3.TryGetValue(serviceKey, out string[]? urls) && urls.Length > 0)
                 return $"{urls[0].TrimEnd('/')}{apiPath}";
         }
         return $"https://wpa.chat.zalo.me{apiPath}";
@@ -325,56 +398,58 @@ public static class ApiMethods
 
     private static string BuildApiUrl(ZaloContext ctx, string endpoint, object? parameters = null, bool flattenToQuery = false)
     {
-        var baseUrl = ResolveBaseUrl(ctx, endpoint);
-        var extraParams = new Dictionary<string, string>();
+        string baseUrl = ResolveBaseUrl(ctx, endpoint);
+        Dictionary<string, string> extraParams = new();
         if (parameters != null && flattenToQuery)
         {
-            var dict = ObjectToDictionary(parameters);
-            foreach (var kvp in dict)
+            Dictionary<string, string> dict = ObjectToDictionary(parameters);
+            foreach (KeyValuePair<string, string> kvp in dict)
+            {
                 if (kvp.Value != null)
                     extraParams[kvp.Key] = kvp.Value?.ToString() ?? "";
+            }
         }
         return ZaloUtils.MakeUrl(baseUrl, extraParams.Count > 0 ? extraParams : null, ctx.ApiVersion, ctx.ApiType);
     }
 
     public static async Task<ZaloApiResponse<JsonElement>> CallGetApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? parameters = null)
     {
-        var url = BuildApiUrl(ctx, endpoint, parameters, true);
+        string url = BuildApiUrl(ctx, endpoint, parameters, true);
         return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Get, endpoint);
     }
 
     public static async Task<ZaloApiResponse<JsonElement>> CallEncryptedGetApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? parameters = null)
     {
-        var baseUrl = BuildApiUrl(ctx, endpoint);
+        string baseUrl = BuildApiUrl(ctx, endpoint);
         string encryptedParams;
         if (parameters != null)
         {
-            var json = JsonSerializer.Serialize(parameters, _jsonOptions);
+            string json = JsonSerializer.Serialize(parameters, _jsonOptions);
             encryptedParams = AesHelper.EncryptAesCbc(ctx.SecretKey, json) ?? json;
         }
         else
         {
             encryptedParams = AesHelper.EncryptAesCbc(ctx.SecretKey, "{}") ?? "{}";
         }
-        var url = ZaloUtils.MakeUrl(baseUrl, new Dictionary<string, string> { ["params"] = encryptedParams }, ctx.ApiVersion, ctx.ApiType);
+        string url = ZaloUtils.MakeUrl(baseUrl, new Dictionary<string, string> { ["params"] = encryptedParams }, ctx.ApiVersion, ctx.ApiType);
         return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Get, endpoint);
     }
 
     public static async Task<ZaloApiResponse<JsonElement>> CallPostApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? data = null)
     {
-        var url = BuildApiUrl(ctx, endpoint);
+        string url = BuildApiUrl(ctx, endpoint);
         return await SendApiRequestAsync(ctx, httpClient, url, HttpMethod.Post, endpoint, data);
     }
 
     public static async Task<ZaloApiResponse<JsonElement>> CallEncryptedPostApiAsync(ZaloContext ctx, HttpClient httpClient, string endpoint, object? data = null)
     {
-        var url = BuildApiUrl(ctx, endpoint);
+        string url = BuildApiUrl(ctx, endpoint);
         return await SendApiEncryptedRequestAsync(ctx, httpClient, url, HttpMethod.Post, endpoint, data);
     }
 
     public static async Task<ZaloApiResponse<JsonElement>> CallCustomApiAsync(ZaloContext ctx, HttpClient httpClient, string method, string endpoint, object? data = null, bool isGet = true)
     {
-        var url = BuildApiUrl(ctx, endpoint);
+        string url = BuildApiUrl(ctx, endpoint);
         return await SendApiRequestAsync(ctx, httpClient, url, isGet ? HttpMethod.Get : HttpMethod.Post, endpoint, data);
     }
 
@@ -382,44 +457,49 @@ public static class ApiMethods
     {
         try
         {
-            var request = new HttpRequestMessage(method, url);
+            HttpRequestMessage request = new(method, url);
             request.Headers.Add("User-Agent", ctx.UserAgent);
             if (!string.IsNullOrEmpty(ctx.Imei))
                 request.Headers.Add("x-zalo-imei", ctx.Imei);
-            var cookieHeader = GetCookieHeaderForUrl(ctx.CookieContainer, url);
+            string cookieHeader = GetCookieHeaderForUrl(ctx.CookieContainer, url);
             if (!string.IsNullOrEmpty(cookieHeader))
                 request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
             if (data != null)
             {
-                var json = JsonSerializer.Serialize(data, _jsonOptions);
-                var encrypted = !string.IsNullOrEmpty(ctx.SecretKey)
+                string json = JsonSerializer.Serialize(data, _jsonOptions);
+                string encrypted = !string.IsNullOrEmpty(ctx.SecretKey)
                     ? AesHelper.EncryptAesCbc(ctx.SecretKey, json) ?? json : json;
                 request.Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["params"] = encrypted });
             }
-            var response = await httpClient.SendAsync(request);
-            var responseString = await response.Content.ReadAsStringAsync();
+            HttpResponseMessage response = await httpClient.SendAsync(request);
+            string responseString = await response.Content.ReadAsStringAsync();
 
             // Fire cookie update callback after every response (Set-Cookie auto-processed by CookieContainer)
             if (ctx.Options.OnCookiesUpdated != null)
             {
                 try
                 {
-                    var cookies = new List<CookieItem>();
-                    var domains = new[] { "chat.zalo.me", "zalo.me", "wpa.chat.zalo.me" };
-                    foreach (var domain in domains)
+                    List<CookieItem> cookies = new();
+                    string[] domains = new[] { "chat.zalo.me", "zalo.me", "wpa.chat.zalo.me" };
+                    foreach (string? domain in domains)
                     {
-                        var uri = new Uri($"https://{domain}");
-                        var domainCookies = ctx.CookieContainer.GetCookies(uri);
+                        Uri uri = new($"https://{domain}");
+                        CookieCollection domainCookies = ctx.CookieContainer.GetCookies(uri);
                         foreach (Cookie c in domainCookies)
                         {
                             if (cookies.Any(ex => ex.Name == c.Name && ex.Domain == c.Domain))
                                 continue;
                             cookies.Add(new CookieItem
                             {
-                                Name = c.Name, Value = c.Value, Domain = c.Domain,
-                                Path = c.Path, Secure = c.Secure, HttpOnly = c.HttpOnly,
+                                Name = c.Name,
+                                Value = c.Value,
+                                Domain = c.Domain,
+                                Path = c.Path,
+                                Secure = c.Secure,
+                                HttpOnly = c.HttpOnly,
                                 ExpirationDate = new DateTimeOffset(c.Expires, TimeSpan.Zero).ToUnixTimeSeconds(),
-                                SameSite = "unspecified", Session = c.Expires == DateTime.MinValue,
+                                SameSite = "unspecified",
+                                Session = c.Expires == DateTime.MinValue,
                             });
                         }
                     }
@@ -430,25 +510,25 @@ public static class ApiMethods
 
             if (ctx.Options.Logging && endpoint != null)
             {
-                var preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;
+                string preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;
                 ctx.Options.ApiLogCallback?.Invoke($"[API] {method} {url} → HTTP {(int)response.StatusCode} | {preview}");
             }
             if (!response.IsSuccessStatusCode)
                 return new ZaloApiResponse<JsonElement> { Error = $"HTTP {(int)response.StatusCode}: {method} {url}" };
-            using var doc = JsonDocument.Parse(responseString);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("error_code", out var ecEl) || ecEl.GetInt32() != 0)
+            using JsonDocument doc = JsonDocument.Parse(responseString);
+            JsonElement root = doc.RootElement;
+            if (!root.TryGetProperty("error_code", out JsonElement ecEl) || ecEl.GetInt32() != 0)
             {
-                var errMsg = root.TryGetProperty("error_message", out var emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
-                var errCode = root.TryGetProperty("error_code", out var ecEl2) ? ecEl2.GetInt32() : -1;
+                string errMsg = root.TryGetProperty("error_message", out JsonElement emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
+                int errCode = root.TryGetProperty("error_code", out JsonElement ecEl2) ? ecEl2.GetInt32() : -1;
                 return new ZaloApiResponse<JsonElement> { Error = errMsg, ErrorCode = errCode };
             }
-            if (!root.TryGetProperty("data", out var dataEl))
+            if (!root.TryGetProperty("data", out JsonElement dataEl))
                 return new ZaloApiResponse<JsonElement> { Error = "No data" };
-            var rawData = dataEl.GetString();
+            string? rawData = dataEl.GetString();
             if (string.IsNullOrEmpty(rawData))
             {
-                using var e = JsonDocument.Parse("{}");
+                using JsonDocument e = JsonDocument.Parse("{}");
                 return new ZaloApiResponse<JsonElement> { Data = e.RootElement.Clone() };
             }
             string decrypted;
@@ -458,19 +538,19 @@ public static class ApiMethods
                 if (decrypted == null) return new ZaloApiResponse<JsonElement> { Error = "Failed to decrypt" };
             }
             else decrypted = rawData;
-            using var innerDoc = JsonDocument.Parse(decrypted);
-            var innerRoot = innerDoc.RootElement;
-            if (innerRoot.TryGetProperty("error_code", out var iEc) && iEc.GetInt32() != 0)
+            using JsonDocument innerDoc = JsonDocument.Parse(decrypted);
+            JsonElement innerRoot = innerDoc.RootElement;
+            if (innerRoot.TryGetProperty("error_code", out JsonElement iEc) && iEc.GetInt32() != 0)
             {
-                var iMsg = innerRoot.TryGetProperty("error_message", out var iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
+                string iMsg = innerRoot.TryGetProperty("error_message", out JsonElement iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
                 return new ZaloApiResponse<JsonElement> { Error = iMsg, ErrorCode = iEc.GetInt32() };
             }
-            var respData = innerRoot.TryGetProperty("data", out var iData) ? iData.Clone() : innerRoot.Clone();
+            JsonElement respData = innerRoot.TryGetProperty("data", out JsonElement iData) ? iData.Clone() : innerRoot.Clone();
             return new ZaloApiResponse<JsonElement> { Data = respData };
         }
         catch (Exception ex)
         {
-            var msg = ex.Message;
+            string msg = ex.Message;
             if (ctx.Options.ApiLogCallback != null)
                 ctx.Options.ApiLogCallback($"[API-ERROR] {method} {endpoint ?? url}: {msg}");
             return new ZaloApiResponse<JsonElement> { Error = $"Request failed: {msg}" };
@@ -481,47 +561,48 @@ public static class ApiMethods
     {
         try
         {
-            var request = new HttpRequestMessage(method, url);
+            HttpRequestMessage request = new(method, url);
             request.Headers.Add("User-Agent", ctx.UserAgent);
             if (!string.IsNullOrEmpty(ctx.Imei))
                 request.Headers.Add("x-zalo-imei", ctx.Imei);
-            var cookieHeader = GetCookieHeaderForUrl(ctx.CookieContainer, url);
+            string cookieHeader = GetCookieHeaderForUrl(ctx.CookieContainer, url);
             if (!string.IsNullOrEmpty(cookieHeader))
                 request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
             if (data != null && method == HttpMethod.Post)
             {
-                var json = JsonSerializer.Serialize(data, _jsonOptions);
-                var formData = new Dictionary<string, string> { ["data"] = json };
+                string json = JsonSerializer.Serialize(data, _jsonOptions);
+                Dictionary<string, string> formData = new()
+                { ["data"] = json };
                 if (!string.IsNullOrEmpty(ctx.SecretKey))
                 {
-                    var encrypted = AesHelper.EncryptAesCbc(ctx.SecretKey, json);
-                    if (encrypted != null) formData["data"] = encrypted;
+                    string? encrypted = AesHelper.EncryptAesCbc(ctx.SecretKey, json);
+                    if (encrypted != null) formData["params"] = encrypted;
                 }
                 request.Content = new FormUrlEncodedContent(formData);
             }
-            var response = await httpClient.SendAsync(request);
-            var responseString = await response.Content.ReadAsStringAsync();
+            HttpResponseMessage response = await httpClient.SendAsync(request);
+            string responseString = await response.Content.ReadAsStringAsync();
             if (ctx.Options.Logging && endpoint != null)
             {
-                var preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;
+                string preview = responseString.Length > 200 ? responseString[..200] + "..." : responseString;
                 ctx.Options.ApiLogCallback?.Invoke($"[API] {method} {url} → HTTP {(int)response.StatusCode} | {preview}");
             }
             if (!response.IsSuccessStatusCode)
                 return new ZaloApiResponse<JsonElement> { Error = $"HTTP {(int)response.StatusCode}: {method} {url}" };
-            using var doc = JsonDocument.Parse(responseString);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("error_code", out var ecEl) || ecEl.GetInt32() != 0)
+            using JsonDocument doc = JsonDocument.Parse(responseString);
+            JsonElement root = doc.RootElement;
+            if (!root.TryGetProperty("error_code", out JsonElement ecEl) || ecEl.GetInt32() != 0)
             {
-                var errMsg = root.TryGetProperty("error_message", out var emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
-                var errCode = root.TryGetProperty("error_code", out var ecEl2) ? ecEl2.GetInt32() : -1;
+                string errMsg = root.TryGetProperty("error_message", out JsonElement emEl) ? emEl.GetString() ?? "Unknown" : "Unknown";
+                int errCode = root.TryGetProperty("error_code", out JsonElement ecEl2) ? ecEl2.GetInt32() : -1;
                 return new ZaloApiResponse<JsonElement> { Error = errMsg, ErrorCode = errCode };
             }
-            if (!root.TryGetProperty("data", out var dataEl))
+            if (!root.TryGetProperty("data", out JsonElement dataEl))
                 return new ZaloApiResponse<JsonElement> { Error = "No data" };
-            var rawData = dataEl.GetString();
+            string? rawData = dataEl.GetString();
             if (string.IsNullOrEmpty(rawData))
             {
-                using var e = JsonDocument.Parse("{}");
+                using JsonDocument e = JsonDocument.Parse("{}");
                 return new ZaloApiResponse<JsonElement> { Data = e.RootElement.Clone() };
             }
             string decrypted;
@@ -531,19 +612,19 @@ public static class ApiMethods
                 if (decrypted == null) return new ZaloApiResponse<JsonElement> { Error = "Failed to decrypt" };
             }
             else decrypted = rawData;
-            using var innerDoc = JsonDocument.Parse(decrypted);
-            var innerRoot = innerDoc.RootElement;
-            if (innerRoot.TryGetProperty("error_code", out var iEc) && iEc.GetInt32() != 0)
+            using JsonDocument innerDoc = JsonDocument.Parse(decrypted);
+            JsonElement innerRoot = innerDoc.RootElement;
+            if (innerRoot.TryGetProperty("error_code", out JsonElement iEc) && iEc.GetInt32() != 0)
             {
-                var iMsg = innerRoot.TryGetProperty("error_message", out var iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
+                string iMsg = innerRoot.TryGetProperty("error_message", out JsonElement iEm) ? iEm.GetString() ?? "Unknown" : "Unknown";
                 return new ZaloApiResponse<JsonElement> { Error = iMsg, ErrorCode = iEc.GetInt32() };
             }
-            var respData = innerRoot.TryGetProperty("data", out var iData) ? iData.Clone() : innerRoot.Clone();
+            JsonElement respData = innerRoot.TryGetProperty("data", out JsonElement iData) ? iData.Clone() : innerRoot.Clone();
             return new ZaloApiResponse<JsonElement> { Data = respData };
         }
         catch (Exception ex)
         {
-            var msg = ex.Message;
+            string msg = ex.Message;
             if (ctx.Options.ApiLogCallback != null)
                 ctx.Options.ApiLogCallback($"[API-ERROR] {method} {endpoint ?? url}: {msg}");
             return new ZaloApiResponse<JsonElement> { Error = $"Request failed: {msg}" };
@@ -552,11 +633,48 @@ public static class ApiMethods
 
     private static string GetCookieHeaderForUrl(CookieContainer container, string url)
     {
-        try { var uri = new Uri(url); var cookies = container.GetCookies(uri); var sb = new StringBuilder(); foreach (Cookie cookie in cookies) { if (sb.Length > 0) sb.Append("; "); sb.Append($"{cookie.Name}={cookie.Value}"); } return sb.ToString(); } catch { return ""; }
+        try { Uri uri = new(url); CookieCollection cookies = container.GetCookies(uri); StringBuilder sb = new(); foreach (Cookie cookie in cookies) { if (sb.Length > 0) sb.Append("; "); sb.Append($"{cookie.Name}={cookie.Value}"); } return sb.ToString(); } catch { return ""; }
     }
 
-    private static Dictionary<string, object?> ObjectToDictionary(object obj)
+    private static Dictionary<string, string> ObjectToDictionary(object obj)
     {
-        return obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).ToDictionary(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..], p => p.GetValue(obj));
+        Dictionary<string, string> dictionary = new();
+        if (obj == null) return dictionary;
+
+        // Lấy tất cả thuộc tính public của object
+        PropertyInfo[] properties = obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        foreach (PropertyInfo? prop in properties)
+        {
+            object value = prop.GetValue(obj, null);
+            if (value == null) continue;
+
+            // Trường hợp đặc biệt: Thuộc tính là chuỗi (string cũng là IEnumerable nên cần loại trừ trước)
+            if (value is string stringValue)
+            {
+                dictionary[prop.Name] = stringValue;
+            }
+            // Trường hợp thuộc tính là một Danh sách / Mảng (List<int>, List<string>, int[], v.v.)
+            else if (value is IEnumerable enumerableValue)
+            {
+                // Chuyển đổi toàn bộ phần tử trong danh sách thành chuỗi
+                IEnumerable<string> items = enumerableValue.Cast<object>()
+                                           .Select(x => x?.ToString() ?? "")
+                                           .Where(s => !string.IsNullOrEmpty(s));
+
+                // Cách 1: Gộp bằng dấu phẩy (Ví dụ: "1,2,3") -> Phổ biến với API Zalo
+                dictionary[prop.Name] = string.Join(",", items);
+
+                // Cách 2: Nếu Zalo yêu cầu lặp lại khóa kiểu "id=1&id=2" (Hiếm gặp hơn ở Zalo)
+                // Bạn có thể xử lý trực tiếp khi build URL, nhưng cách 1 (gộp dấu phẩy) là chuẩn nhất cho phần lớn các API GET của Zalo.
+            }
+            // Trường hợp là các kiểu đơn giản khác (int, bool, double...)
+            else
+            {
+                dictionary[prop.Name] = value.ToString() ?? "";
+            }
+        }
+
+        return dictionary;
     }
 }

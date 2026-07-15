@@ -1,8 +1,7 @@
-using System.Text.Json;
 using ICU.Lib.ZaloClientWeb.Demo.Helpers;
-using ICU.Lib.ZaloClientWeb.Demo.Models;
-using ICU.Lib.ZaloClientWeb.Models;
+using ICU.Lib.ZaloClientWeb.Utils;
 using Spectre.Console;
+using System.Text.Json;
 
 namespace ICU.Lib.ZaloClientWeb.Demo.Components;
 
@@ -27,7 +26,7 @@ public static class ContactsPanelComponent
 
         try
         {
-            var friendResult = await api.GetAllFriendsAsync();
+            ZaloApiResponse<List<ICU.Lib.ZaloClientWeb.Models.ApiModels.getAllFriendsModel.ResponseModel>?> friendResult = await api.GetAllFriendsAsync();
             if (!friendResult.IsSuccess)
             {
                 AnsiConsole.MarkupLine($"[red]Failed: {friendResult.Error}[/]");
@@ -36,38 +35,13 @@ public static class ContactsPanelComponent
                 return;
             }
 
-            var root = friendResult.Data;
-            JsonElement friendArray = root;
-
-            // Try to extract friend list from response
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == JsonValueKind.Object)
+            if (friendResult.Data != null)
             {
-                if (dataEl.TryGetProperty("profiles", out var profiles))
+                int count = 0;
+                foreach (var friend in friendResult.Data)
                 {
-                    ShowContactsFromProfiles(profiles);
-                    AnsiConsole.MarkupLine("[dim]Press any key to go back...[/]");
-                    Console.ReadKey(true);
-                    return;
-                }
-                if (dataEl.TryGetProperty("friends", out var friends))
-                {
-                    friendArray = friends;
-                }
-            }
-
-            if (friendArray.ValueKind == JsonValueKind.Array)
-            {
-                var count = 0;
-                foreach (var friend in friendArray.EnumerateArray())
-                {
-                    var name = friend.TryGetProperty("displayName", out var dn)
-                        ? dn.GetString()
-                        : friend.TryGetProperty("name", out var n)
-                            ? n.GetString()
-                            : "Unknown";
-                    var uid = friend.TryGetProperty("id", out var idEl)
-                        ? idEl.GetString()
-                        : "?";
+                    string? name = friend.displayName;
+                    string? uid = friend.userId;
 
                     count++;
                     AnsiConsole.MarkupLine($"  [green]👤 {name.EscapeMarkupForSpectre()}[/] [dim]({uid.Shorten()})[/]");
@@ -90,21 +64,21 @@ public static class ContactsPanelComponent
 
     private static void ShowContactsFromProfiles(JsonElement profiles)
     {
-        var count = 0;
-        foreach (var profile in profiles.EnumerateObject())
+        int count = 0;
+        foreach (JsonProperty profile in profiles.EnumerateObject())
         {
-            var val = profile.Value;
-            var name = val.TryGetProperty("displayName", out var dn)
+            JsonElement val = profile.Value;
+            string? name = val.TryGetProperty("displayName", out JsonElement dn)
                 ? dn.GetString()
-                : val.TryGetProperty("name", out var n)
+                : val.TryGetProperty("name", out JsonElement n)
                     ? n.GetString()
                     : profile.Name;
-            var avatar = val.TryGetProperty("avatar", out var av)
+            string? avatar = val.TryGetProperty("avatar", out JsonElement av)
                 ? av.GetString()
                 : "";
 
             count++;
-            var avatarStr = string.IsNullOrEmpty(avatar) ? "👤" : "👤";
+            string avatarStr = string.IsNullOrEmpty(avatar) ? "👤" : "👤";
             AnsiConsole.MarkupLine($"  {avatarStr} [green]{name.EscapeMarkupForSpectre()}[/] [dim]({profile.Name.Shorten()})[/]");
         }
         AnsiConsole.MarkupLine($"\n[bold]Total: {count} contacts[/]");

@@ -225,7 +225,28 @@ public class ZaloApi
     private string GetImei() => Context.Imei;
 
     // ─── Profile APIs ────────────────────────────────────────────────────
-    public Task<ZaloApiResponse<JsonElement>> GetUserInfoAsync(long userId) => ApiClient.CallGetApiAsync("getUserInfo", new { userId });
+    public async Task<ZaloApiResponse<Models.ApiModels.getUserInfoModel.ResponseModel?>> GetUserInfoAsync(long userId)
+    {
+        Models.ApiModels.getUserInfoModel.RequestModel requestModel = new()
+        {
+            phonebook_version = Context.ExtraVer.Phonebook,
+            friend_pversion_map = new List<string> { $"{userId}_0" },
+            avatar_size = (int)AvatarSize.Small,
+            language = Context.Language,
+            show_online_status = 1,
+            imei = GetImei()
+        };
+        ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallPostApiAsync("getUserInfo", requestModel);
+        //string a = responseResult.Data.ToString();
+        Models.ApiModels.getUserInfoModel.ResponseModel? data = JsonSerializer.Deserialize<ICU.Lib.ZaloClientWeb.Models.ApiModels.getUserInfoModel.ResponseModel>(responseResult.Data);
+        ZaloApiResponse<Models.ApiModels.getUserInfoModel.ResponseModel?> result = new()
+        {
+            Data = data,
+            Error = responseResult.Error,
+            ErrorCode = responseResult.ErrorCode
+        };
+        return result;
+    }
     public Task<ZaloApiResponse<JsonElement>> FindUserAsync(string phoneNumber) => ApiClient.CallGetApiAsync("findUser", new { phoneNumber });
     public Task<ZaloApiResponse<JsonElement>> FindUserByUsernameAsync(string username) => ApiClient.CallGetApiAsync("findUserByUsername", new { username });
     public Task<ZaloApiResponse<JsonElement>> GetAccountInfoAsync() => ApiClient.CallGetApiAsync("fetchAccountInfo");
@@ -243,7 +264,16 @@ public class ZaloApi
     // ─── Friend APIs (all encrypted POST) ─────────────────────────────────
     public async Task<ZaloApiResponse<List<Models.ApiModels.getAllFriendsModel.ResponseModel>?>> GetAllFriendsAsync()
     {
-        ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallEncryptedGetApiAsync("getAllFriends", new { incInvalid = 1, page = 1, count = 20000, avatar_size = 120, actiontime = 0, imei = GetImei() });
+        Models.ApiModels.getAllFriendsModel.RequestModel bodyRequest = new()
+        {
+            incInvalid = 1,
+            page = 1,
+            count = 20000,
+            avatar_size = (int)AvatarSize.Small,
+            actiontime = 0,
+            imei = GetImei()
+        };
+        ZaloApiResponse<JsonElement> responseResult = await ApiClient.CallEncryptedGetApiAsync("getAllFriends", bodyRequest);
         List<Models.ApiModels.getAllFriendsModel.ResponseModel>? data = JsonSerializer.Deserialize<List<Models.ApiModels.getAllFriendsModel.ResponseModel>>(responseResult.Data);
         ZaloApiResponse<List<Models.ApiModels.getAllFriendsModel.ResponseModel>?> result = new()
         {

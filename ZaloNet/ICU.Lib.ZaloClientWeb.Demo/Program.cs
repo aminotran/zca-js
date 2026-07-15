@@ -1,7 +1,6 @@
-using ICU.Lib.ZaloClientWeb;
-using ICU.Lib.ZaloClientWeb.Models;
 using ICU.Lib.ZaloClientWeb.Demo.Helpers;
 using ICU.Lib.ZaloClientWeb.Demo.Scenarios;
+using ICU.Lib.ZaloClientWeb.Models;
 
 namespace ICU.Lib.ZaloClientWeb.Demo;
 
@@ -37,7 +36,7 @@ public class Program
 
         while (true)
         {
-            var api = await TryAutoLoginOrShowLoginMenu();
+            ZaloApi? api = await TryAutoLoginOrShowLoginMenu();
             if (api == null) break;
 
             // Launch the new Zalo Web Terminal interface
@@ -53,7 +52,7 @@ public class Program
 
     private static async Task RunLegacyScenario(string[] args)
     {
-        var api = await TryAutoLoginOrShowLoginMenu();
+        ZaloApi? api = await TryAutoLoginOrShowLoginMenu();
         if (api == null) return;
 
         if (args.Length > 1)
@@ -99,14 +98,14 @@ public class Program
 
     private static async Task<ZaloApi?> TryAutoLoginOrShowLoginMenu()
     {
-        var saved = CredentialLoader.TryLoadSession();
+        Credentials? saved = CredentialLoader.TryLoadSession();
         if (saved != null)
         {
             Console.WriteLine("Found saved session. Attempting auto-login...");
             _client = CreateClient();
             try
             {
-                var api = await _client.LoginAsync(saved);
+                ZaloApi api = await _client.LoginAsync(saved);
                 Console.WriteLine($"Auto-login successful! Logged in as UID: {_client.Context?.Uid}");
                 return api;
             }
@@ -136,7 +135,7 @@ public class Program
                 // Auto-persist updated cookies to saved session
                 if (_client?.Context != null)
                 {
-                    var session = CredentialLoader.FromContext(_client.Context);
+                    Credentials session = CredentialLoader.FromContext(_client.Context);
                     session.Cookie = cookies;
                     CredentialLoader.SaveSession(session);
                 }
@@ -156,16 +155,16 @@ public class Program
             Console.WriteLine("3. Exit");
             Console.Write("Choose: ");
 
-            var choice = Console.ReadLine()?.Trim();
+            string? choice = Console.ReadLine()?.Trim();
 
             switch (choice)
             {
                 case "1":
-                    var api1 = await LoginWithCookieAsync(_client);
+                    ZaloApi? api1 = await LoginWithCookieAsync(_client);
                     if (api1 != null) return api1;
                     break;
                 case "2":
-                    var api2 = await LoginWithQrAsync(_client);
+                    ZaloApi? api2 = await LoginWithQrAsync(_client);
                     if (api2 != null) return api2;
                     break;
                 case "3":
@@ -181,14 +180,14 @@ public class Program
     {
         try
         {
-            var credentials = CredentialLoader.LoadFromFile("credentials.example.json");
+            Credentials credentials = CredentialLoader.LoadFromFile("credentials.example.json");
             Console.WriteLine("Logging in with cookies...");
-            var api = await client.LoginAsync(credentials);
+            ZaloApi api = await client.LoginAsync(credentials);
             Console.WriteLine($"Logged in as UID: {client.Context?.Uid}");
 
             if (client.Context != null)
             {
-                var session = CredentialLoader.FromContext(client.Context);
+                Credentials session = CredentialLoader.FromContext(client.Context);
                 CredentialLoader.SaveSession(session);
             }
 
@@ -206,7 +205,7 @@ public class Program
         try
         {
             Console.WriteLine("Starting QR login...");
-            var api = await client.LoginWithQrAsync(
+            ZaloApi api = await client.LoginWithQrAsync(
                 qrPath: "zalo_qr.png",
                 onQrCodeGenerated: (qrUrl) =>
                 {
@@ -219,7 +218,7 @@ public class Program
 
             if (client.Context != null)
             {
-                var session = CredentialLoader.FromContext(client.Context);
+                Credentials session = CredentialLoader.FromContext(client.Context);
                 CredentialLoader.SaveSession(session);
             }
 
