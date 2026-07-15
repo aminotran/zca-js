@@ -67,6 +67,8 @@ public static class ZaloTerminalApp
                     break;
 
                 case string s when s.Contains("Logout"):
+                    // Xóa session đã lưu để lần sau hiện lại màn hình đăng nhập
+                    CredentialLoader.DeleteSession();
                     running = false;
                     break;
             }
