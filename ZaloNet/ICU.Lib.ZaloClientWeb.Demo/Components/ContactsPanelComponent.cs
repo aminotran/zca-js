@@ -40,7 +40,7 @@ public static class ContactsPanelComponent
             JsonElement friendArray = root;
 
             // Try to extract friend list from response
-            if (root.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == JsonValueKind.Object)
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == JsonValueKind.Object)
             {
                 if (dataEl.TryGetProperty("profiles", out var profiles))
                 {
