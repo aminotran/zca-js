@@ -18,6 +18,7 @@
 - **Real-time WebSocket**: Nhận sự kiện tin nhắn, typing, reaction, seen, delivered, group/friend events với **strongly-typed data** (pattern matching)
 - **Encryption**: AES-CBC, AES-GCM đầy đủ (port từ crypto-js)
 - **Strongly-typed models**: POCO classes + discriminated union pattern cho event data
+- **DI support**: `ZaloApiClient` injectable, giảm trùng lặp tham số khi gọi API
 - **Mạnh mẽ & mở rộng**: Dễ dàng thêm API methods, tự do mở rộng
 
 ---
@@ -75,7 +76,8 @@ ICU.Lib.ZaloClientWeb/
 │   └── Types/                  # Enums (6 files)
 ├── Utils/
 │   ├── ZaloUtils.cs            # 20+ utility functions
-│   ├── ApiMethods.cs           # API call helpers (GET/POST/encrypted)
+│   ├── ZaloApiClient.cs        # Injectable API client (DI-friendly, replaces ApiMethods)
+│   ├── ApiMethods.cs           # [Deprecated] static API helpers — use ZaloApiClient instead
 │   ├── ImageHelper.cs          # File metadata
 │   └── ZaloLogger.cs           # Logging
 └── WebSocket/
@@ -322,7 +324,42 @@ listener.GroupEventReceived += (_, e) =>
 };
 ```
 
-### 10. Gọi API + Deserialize
+### 10. Dependency Injection với ZaloApiClient
+
+```csharp
+// ZaloApiClient hỗ trợ DI, giúp giảm trùng lặp tham số khi inject
+// Thay vì gọi ApiMethods.CallGetApiAsync(ctx, httpClient, endpoint, params)
+// bạn inject ZaloApiClient và gọi trực tiếp:
+
+public class MyService
+{
+    private readonly ZaloApiClient _apiClient;
+
+    public MyService(ZaloApiClient apiClient)
+    {
+        _apiClient = apiClient;
+    }
+
+    public async Task DoSomething()
+    {
+        var result = await _apiClient.CallGetApiAsync("fetchAccountInfo");
+        // Không cần truyền ZaloContext hay HttpClient nữa
+    }
+}
+
+// Đăng ký trong DI container:
+// services.AddSingleton(sp => new ZaloApiClient(context, httpClient));
+```
+
+Bạn cũng có thể truy cập `ZaloApiClient` thông qua `ZaloApi.ApiClient`:
+
+```csharp
+var api = await client.LoginAsync(credentials);
+var apiClient = api.ApiClient; // ZaloApiClient instance
+var result = await apiClient.CallGetApiAsync("fetchAccountInfo");
+```
+
+### 11. Gọi API + Deserialize
 
 ```csharp
 // API trả về ZaloApiResponse<JsonElement>
@@ -399,24 +436,4 @@ if (response.IsSuccess)
 
 ## 🔐 Xử lý mã hóa
 
-| JS (crypto-js / Web Crypto) | C# (System.Security.Cryptography) |
-|---|---|
-| AES-CBC (zero IV, PKCS7) | `AesHelper.EncryptAesCbc` / `DecryptAesCbc` |
-| AES-GCM (event data) | `AesHelper.DecryptEventDataGcm` |
-| MD5 (sign key) | `System.Security.Cryptography.MD5` |
-| Zlib inflate (pako) | `System.IO.Compression.DeflateStream` |
 
----
-
-## 🤝 Đóng góp
-
-Mọi đóng góp đều được chào đón! Vui lòng fork project và mở Pull Request.
-
-## 📄 Giấy phép
-
-MIT License.
-
-## 🙏 Credits
-
-- [RFS-ADRENO](https://github.com/RFS-ADRENO) — Tác giả [zca-js](https://github.com/RFS-ADRENO/zca-js) gốc
-- [@truong9c2208](https://github.com/truong9c2208), [@JustKemForFun](https://github.com/JustKemForFun) — Contributors
